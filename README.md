@@ -1,4 +1,4 @@
-# SU-A8g - Breakout
+# CompSys Opgave 1
 
 ## 1. Projektdetaljer
 
