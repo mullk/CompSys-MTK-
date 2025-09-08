@@ -1,15 +1,15 @@
-# SU-A8g - Breakout
+# CompSys Opgave 1
 
 ## 1. Projektdetaljer
 
 **Navn:** Martin Oldhøj Lavrentiew  
 **KU-ID:** zhb423@alumni.ku.dk
 
-**Navn:** Tobias
-**KU-ID:** 
+**Navn:** Tobias Dübeck Kristensen  
+**KU-ID:** rlj430@alumni.ku.dk
 
-**Navn:** Kristian
-**KU-ID:** 
+**Navn:** Kristian Gert Sørensen  
+**KU-ID:** jxk652@alumni.ku.dk
 
 **GitHub Repository:**  
 https://github.com/mullk/CompSys-MTK-
