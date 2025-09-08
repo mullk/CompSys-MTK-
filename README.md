@@ -1,4 +1,4 @@
-# CompSys Opgave 1
+# CompSys Gruppen MTK
 
 ## 1. Projektdetaljer
 
