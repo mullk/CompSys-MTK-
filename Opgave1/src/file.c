@@ -67,14 +67,17 @@ int main(int argc, char *argv[]) {
     // (2) Åbn filen i BINÆR tilstand ("rb"), så vi læser bytes som de er.
     FILE *fp = fopen(path, "rb");
     if (!fp) {
+            fprintf(stdout,
+                "INFO: Kunne ikke åbne fil '%s'. Dette er forventet i denne test.\n",
+                path);
 
     // Kan ikke åbne? Så skriver vi fejlen til STDOUT og exit 0.
-
+        perror(path);
         print_error(path, errno);
         return EXIT_SUCCESS; // = 0
     }
 
-
+ 
     /* 
     (3) Er filen tom?
     Svar og afslut, hvis ja. Ellers læser vi videre. 

@@ -62,10 +62,10 @@ printf "DEL:\x7F end\n"       > test_files/data_del_7f.input
 printf "mix:\x00\x7F\x80\n"   > test_files/data_mix.input
 
 ### Permission denied-case (A0 foreslår det selv)
-printf "hemmelighed"          > test_files/noread.input
-chmod -r test_files/noread.input
+printf "hemmelighed" > test_files/noread.input
+chmod 000 test_files/noread.input
 
-echo "Running the tests.."
+echo "Running the tests.." 
 exitcode=0  # vi samler en samlet "bestået/ikke-bestået"-status til sidst
 
 
@@ -78,6 +78,11 @@ exitcode=0  # vi samler en samlet "bestået/ikke-bestået"-status til sidst
 for f in test_files/*.input
 do
   echo ">>> Testing ${f}.."
+
+      if [[ "$f" == *"noread.input" ]]; then
+        echo "NOTE: chmod 000 virker kun på Linux-filsystemer (ext4, XFS osv.)."
+        echo "      På WSL/NTFS kan filen stadig læses, så testen vil ikke fejle."
+      fi
 
   # Vi opretter vores EXPECTED fil her.
   # Det er her vi laver vores EXPECTED vs ACTUAL sammenligning.
