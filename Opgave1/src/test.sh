@@ -25,61 +25,16 @@ echo "Generating test files.."
 # - '\xNN' er byte med hex-værdi NN (to hex-cifre)
 # - "" (tom streng) er en fil uden indhold (0 byte lang)
 
-printf "Hello, World!\n" > test_files/ascii.input
-printf "Hello, World!" > test_files/ascii2.input
-printf "Hello,\x00World!\n" > test_files/data.input
-printf "" > test_files/empty.input
-
-### TODO: Generate more test files ###
-### dont mind if i do :)))
+### ISO-8859-1 (latin1) – æøå og andre ud over ASCII (0xA0–0xFF)
+#printf "\xE6\xF8\xE5\n"       > test_files/iso_aeoeaa.input    # æøå
+#printf "Grüße\n"              > test_files/iso_umlaut.input    # ü
+printf "Héllo\n"              > test_files/iso_accent.input    # é
+printf "\0xE9\n"               > test_files/emaerke.input #som Hexa é
 
 ### Det er denne del jeg har tilføjet, alt andet er som det var. Dog nu med kommentar
 ### Denne note skal slettes inden aflevering
 
-### ASCII (tilladte bytes: 0x07..\x0D, 0x20..0x7E)
-printf "Normal ASCII\n"       > test_files/ascii_normal.input
-printf "With space \n"        > test_files/ascii_space.input
-printf "With tab\t\n"         > test_files/ascii_tab2.input
-printf "With newline\n\n"     > test_files/ascii_nl2.input
-printf "With carriage\rreturn\n" > test_files/ascii_cr.input
-printf "Mix:\x07\x0A\x0D \x20\x7E\n" > test_files/ascii_mix.input
-
-### ASCII (kontroltegn: \x07..\x0D og ESC \x1B)
-printf "Line1\r\nLine2\r\n"   > test_files/ascii_crlf.input
-printf "TAB\tSEP\tOK\n"       > test_files/ascii_tab.input
-printf "BEL:\x07 OK\n"        > test_files/ascii_bel.input
-printf "\x1B[31mRED\x1B[0m\n" > test_files/ascii_esc.input
-printf "Spaces only      \n"  > test_files/ascii_spaces.input
-printf "Unix\nNewlines\n"     > test_files/ascii_unixnl.input
-printf "Carriage\rOnly\r"     > test_files/ascii_cr_only.input
-
-### ISO-8859-1 (latin1) – æøå og andre ud over ASCII (0xA0–0xFF)
-printf "\xE6\xF8\xE5\n"       > test_files/iso_aeoeaa.input    # æøå
-printf "Héllo\n"              > test_files/iso_accent.input    # é
-printf "Grüße\n"              > test_files/iso_umlaut.input    # ü
-printf "Færøerne\n"           > test_files/iso_mix.input       # æø
-
-### UTF-8 Unicode (multibyte sekvenser)
-printf "Hej 😀\n"              > test_files/utf8_emoji.input
-printf "漢字\n"               > test_files/utf8_kanji.input
-printf "Привет\n"             > test_files/utf8_cyrillic.input
-printf "مرحبا\n"              > test_files/utf8_arabic.input
-
-### Flere DATA typer (forbudte bytes: 0x00, 0x7F, 0x80..0x9F, mm.)
-printf "NUL@\x00mid\n"        > test_files/data_null_mid.input
-printf "\x00starts\n"         > test_files/data_null_start.input
-printf "DEL:\x7F end\n"       > test_files/data_del_7f.input
-printf "mix:\x00\x7F\x80\n"   > test_files/data_mix.input
-
-### Empty (skal være 0 bytes)
-: > test_files/empty.input
-: > test_files/empty2.input
-
-### Permission denied-case
-printf "hemmelighed" > test_files/noread.input
-chmod 000 test_files/noread.input
-
-echo "Running the tests.." 
+echo "Running the tests.."
 exitcode=0  # vi samler en samlet "bestået/ikke-bestået"-status til sidst
 
 
@@ -116,7 +71,7 @@ do
   #    - '.*' i A betyder "alt efter dette punkt" (0 eller flere vilkårlige tegn).
   # 3) Gem den normaliserede linje som "<filnavn>.expected".
 
-  file    "$f" | sed -e 's/ASCII text.*/ASCII text/' \
+  file    "$f" | sed     -e 's/ASCII text.*/ASCII text/' \
                          -e 's/UTF-8 Unicode text.*/UTF-8 Unicode text/' \
                          -e 's/Unicode text, UTF-8 text.*/UTF-8 Unicode text/' \
                          -e 's/ISO-8859 text.*/ISO-8859 text/' \
@@ -126,6 +81,8 @@ do
   # Vi opretter vores ACTUAL fil her.
   # Her bygger vi vores ACTUAL-output ved at køre vores eget program på filen
   # Og gemmer det, programmet skriver (stdout), i "<filnavn>.actual".
+  #https://chatgpt.com/share/68c7d7bf-d924-800c-8b5a-8f50c8c8642f NOTE TIL -e 's/Unicode text, UTF-8 text.*/UTF-8 Unicode text/' \
+
 
   ./file  "${f}" > "${f}.actual"
 
