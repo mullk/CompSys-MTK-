@@ -49,6 +49,102 @@ static bool tjekforempty(FILE *fp) {
     return false;                    // ikke tom
 }
 
+    /* 
+    Bestem længden af en UTF-8 sekvens ud fra dens første byte:
+    - 0xxxxxxx          = 1 byte (almindelig ASCII)
+    - 110xxxxx          = 2 byte
+    - 1110xxxx          = 3 byte
+    - 11110xxx          = 4 byte
+    Hvis første byte ikke matcher et gyldigt mønster, returnerer vi -1.
+    */
+    int utf8_seq_len(unsigned char b0) {
+        if ((b0 & 0x80) == 0x00) return 1;       // ASCII (0xxxxxxx)
+        else if ((b0 & 0xE0) == 0xC0) return 2;  // 2-byte sekvens
+        else if ((b0 & 0xF0) == 0xE0) return 3;  // 3-byte sekvens
+        else if ((b0 & 0xF8) == 0xF0) return 4;  // 4-byte sekvens
+        else return -1;                          // ugyldig startbyte
+    }
+
+    /* 
+    Tjek om en byte er en "continuation byte" i UTF-8.
+    Disse skal altid starte med bitmønstret 10xxxxxx.
+    */
+    bool is_continuation(unsigned char c) {
+        return (c & 0xC0) == 0x80;
+    }
+
+    /* 
+    Valider en enkelt UTF-8 sekvens givet dens bytes:
+    - ASCII: præcis 1 byte i intervallet 0xxxxxxx
+    - 2-byte: start 110xxxxx efterfulgt af 1 continuation (10xxxxxx)
+    - 3-byte: start 1110xxxx efterfulgt af 2 continuations
+    - 4-byte: start 11110xxx efterfulgt af 3 continuations
+    Hvis længden ikke passer eller der mangler continuation bytes,
+    er sekvensen ugyldig.
+    */
+
+
+    bool is_valid_UTF8(unsigned char seq[], int len) {
+        // Hvis længden er mindre end 1, kan det ikke være en gyldig sekvens
+        if (len < 1) return false;
+
+        // Første byte bruges til at afgøre hvilken type sekvens vi har
+        unsigned char b0 = seq[0];
+
+        // Hvis første byte er 0xxxxxxx, er det ASCII → præcis 1 byte
+        if ((b0 & 0x80) == 0x00) {
+            return len == 1; 
+        } 
+        // Hvis første byte er 110xxxxx, skal vi have 2 byte i alt:
+        // én startbyte + én continuation (10xxxxxx)
+        else if ((b0 & 0xE0) == 0xC0) {
+            return len == 2 && is_continuation(seq[1]);
+        } 
+        // Hvis første byte er 1110xxxx, skal vi have 3 byte i alt:
+        // én startbyte + to continuation bytes
+        else if ((b0 & 0xF0) == 0xE0) {
+            return len == 3 && is_continuation(seq[1]) && is_continuation(seq[2]);
+        } 
+        // Hvis første byte er 11110xxx, skal vi have 4 byte i alt:
+        // én startbyte + tre continuation bytes
+        else if ((b0 & 0xF8) == 0xF0) {
+            return len == 4 
+                && is_continuation(seq[1]) 
+                && is_continuation(seq[2]) 
+                && is_continuation(seq[3]);
+        }
+
+        // Hvis ingen af mønstrene passer, er sekvensen ugyldig
+        return false;
+    }
+
+    /* 
+    Tjek om en fil kan klassificeres som ISO-8859-1 (latin1).
+    Vi gennemgår alle bytes i bufferen én for én:
+    - Hvis byte er "tilladt" A0-ASCII (via is_ascii_allowed), er den ok.
+    - Hvis byte er i intervallet 0xA0..0xFF, er det også ok (latin1-udvidelse).
+    - Alt andet → ikke ISO-8859-1.
+    */
+    static bool is_iso8859(unsigned char *buf, size_t len) {
+        // Gå gennem alle bytes i bufferen
+        for (size_t i = 0; i < len; i++) {
+            unsigned char b = buf[i];
+
+            // Hvis byte er et af de tilladte ASCII-tegn → fortsæt
+            if (is_ascii_allowed(b)) continue;
+
+            // Hvis byte er 0xA0 eller højere → det er et gyldigt latin1-tegn
+            if (b >= 0xA0) continue;
+
+            // Hvis vi når hertil, har vi fundet en ugyldig byte
+            return false;
+        }
+
+        // Hvis vi når hele vejen igennem uden fejl, er alt gyldigt ISO-8859-1
+        return true;
+    }
+
+
 int main(int argc, char *argv[]) {
 
     /* 
@@ -89,41 +185,75 @@ int main(int argc, char *argv[]) {
         return EXIT_SUCCESS;
     }
 
+
+    rewind(fp);  // flyt filposition tilbage til start, så vi kan læse hele indholdet fordi tjekforempty kan have læst 1 byte
+    unsigned char buf[4096];  // buffer til at holde op til 4096 bytes
+    size_t n = fread(buf, 1, sizeof(buf), fp);  // læs filens bytes ind i buf
+
     /* 
-    (4) Læs hele filen byte for byte og tjek, om alt er tilladt A0-ASCII.
-    fgetc(fp) giver næste byte som int (så det kan rumme EOF = -1).
-    Vi caster til 'unsigned char' før check, så 0x80..0xFF ikke bliver negative. 
+    (4) Tjek for ASCII:
+    Vi går alle bytes igennem og ser, om de er "tilladt" A0-ASCII
+    (dvs. synlige tegn, mellemrum, ESC og få kontroltegn).
+    Hvis ALT er tilladt, så er filen ren ASCII.
     */
-
-    int ch;
-    bool all_ascii = true;
-    while ((ch = fgetc(fp)) != EOF) {          // læs til filens slutning (EOF)
-        unsigned char b = (unsigned char) ch;  // gør klar til byte-sammenligning
-        if (!is_ascii_allowed(b)) {            // fandt en "ikke-tilladt" byte?
-            all_ascii = false;
-            break;                             // Hvis vi når hertil er det ikke rent ASCII derfor stop loop
-        }
+    bool ascii_ok = true;
+    for (size_t j = 0; j < n; j++) {
+        if (!is_ascii_allowed(buf[j])) { ascii_ok = false; break; }
     }
-
-    // Hvis der skete en læsefejl, giv os en fejlmeddelelse og afslut.
-    
-    if (ferror(fp)) {
-        print_error(path, errno);
+    if (ascii_ok) {
+        fprintf(stdout, "%s: ASCII text\n", path);
         fclose(fp);
         return EXIT_SUCCESS;
     }
 
-    // (5) Træk konklusion og skriv præcis én linje til STDOUT.
-
-    if (all_ascii) {
-        fprintf(stdout, "%s: ASCII text\n", path);
-    } else {
-        fprintf(stdout, "%s: data\n", path);
+    /* 
+    (5) Tjek for UTF-8:
+    Vi scanner filen byte for byte og afgør længden på hver UTF-8 sekvens.
+    - Hvis en startbyte er ugyldig, eller der mangler continuation bytes,
+      så er det ikke gyldigt UTF-8.
+    - Hvis hele bufferen kan opdeles i gyldige sekvenser, er den gyldig.
+    */
+    bool utf8_valid = true;
+    for (size_t i = 0; i < n; ) {
+        int len = utf8_seq_len(buf[i]);
+        if (len < 1 || i + len > n || !is_valid_UTF8(&buf[i], len)) {
+            utf8_valid = false;
+            break;
+        }
+        i += len; // spring frem til næste sekvens
+    }
+    if (utf8_valid) {
+        // ekstra filter: nulbyte (0x00) og DEL (0x7F) er ikke tilladt i denne opgave
+        for (size_t j = 0; j < n; j++) {
+            if (buf[j] == 0x00 || buf[j] == 0x7F) {
+                utf8_valid = false;
+                break;
+            }
+        }
+    }
+    if (utf8_valid) {
+        fprintf(stdout, "%s: UTF-8 Unicode text\n", path);
+        fclose(fp);
+        return EXIT_SUCCESS;
     }
 
-    // Det er åbenbart vigtigt at lukke filen og afslut med succes.
+    /* 
+    (6) Tjek for ISO-8859-1 (latin1):
+    Hvis alle bytes enten er gyldig ASCII eller >= 0xA0, 
+    så er filen ISO-8859-1 tekst.
+    */
+    if (is_iso8859(buf, n)) {
+        fprintf(stdout, "%s: ISO-8859 text\n", path);
+        fclose(fp);
+        return EXIT_SUCCESS;
+    }
 
+    /* 
+    (7) Alt andet falder igennem som "data":
+    - Hvis der er kontroltegn udenfor ASCII
+    - eller blandede/ugyldige sekvenser
+    */
+    fprintf(stdout, "%s: data\n", path);
     fclose(fp);
     return EXIT_SUCCESS;
 }
-
