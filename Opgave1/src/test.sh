@@ -39,29 +39,43 @@ printf "" > test_files/empty.input
 ### ASCII (tilladte bytes: 0x07..\x0D, 0x20..0x7E)
 printf "Normal ASCII\n"       > test_files/ascii_normal.input
 printf "With space \n"        > test_files/ascii_space.input
-printf "With tab\t\n"        > test_files/ascii_tab2.input
-printf "With newline\n\n"    > test_files/ascii_nl2.input
+printf "With tab\t\n"         > test_files/ascii_tab2.input
+printf "With newline\n\n"     > test_files/ascii_nl2.input
 printf "With carriage\rreturn\n" > test_files/ascii_cr.input
 printf "Mix:\x07\x0A\x0D \x20\x7E\n" > test_files/ascii_mix.input
 
-### ASCII (tilladte kontroltegn: \x07..\x0D og ESC \x1B)
+### ASCII (kontroltegn: \x07..\x0D og ESC \x1B)
 printf "Line1\r\nLine2\r\n"   > test_files/ascii_crlf.input
 printf "TAB\tSEP\tOK\n"       > test_files/ascii_tab.input
 printf "BEL:\x07 OK\n"        > test_files/ascii_bel.input
 printf "\x1B[31mRED\x1B[0m\n" > test_files/ascii_esc.input
-printf "Spaces only      \n"   > test_files/ascii_spaces.input
+printf "Spaces only      \n"  > test_files/ascii_spaces.input
 printf "Unix\nNewlines\n"     > test_files/ascii_unixnl.input
 printf "Carriage\rOnly\r"     > test_files/ascii_cr_only.input
+
+### ISO-8859-1 (latin1) – æøå og andre ud over ASCII (0xA0–0xFF)
+printf "\xE6\xF8\xE5\n"       > test_files/iso_aeoeaa.input    # æøå
+printf "Héllo\n"              > test_files/iso_accent.input    # é
+printf "Grüße\n"              > test_files/iso_umlaut.input    # ü
+printf "Færøerne\n"           > test_files/iso_mix.input       # æø
+
+### UTF-8 Unicode (multibyte sekvenser)
+printf "Hej 😀\n"              > test_files/utf8_emoji.input
+printf "漢字\n"               > test_files/utf8_kanji.input
+printf "Привет\n"             > test_files/utf8_cyrillic.input
+printf "مرحبا\n"              > test_files/utf8_arabic.input
 
 ### Flere DATA typer (forbudte bytes: 0x00, 0x7F, 0x80..0x9F, mm.)
 printf "NUL@\x00mid\n"        > test_files/data_null_mid.input
 printf "\x00starts\n"         > test_files/data_null_start.input
 printf "DEL:\x7F end\n"       > test_files/data_del_7f.input
-# printf "C1:\x80 bad\n"        > test_files/data_c1_80.input
-# printf "C1:\x9F bad\n"        > test_files/data_c1_9f.input
 printf "mix:\x00\x7F\x80\n"   > test_files/data_mix.input
 
-### Permission denied-case (A0 foreslår det selv)
+### Empty (skal være 0 bytes)
+: > test_files/empty.input
+: > test_files/empty2.input
+
+### Permission denied-case
 printf "hemmelighed" > test_files/noread.input
 chmod 000 test_files/noread.input
 
@@ -104,6 +118,7 @@ do
 
   file    "$f" | sed -e 's/ASCII text.*/ASCII text/' \
                          -e 's/UTF-8 Unicode text.*/UTF-8 Unicode text/' \
+                         -e 's/Unicode text, UTF-8 text.*/UTF-8 Unicode text/' \
                          -e 's/ISO-8859 text.*/ISO-8859 text/' \
                          -e 's/writable, regular file, no read permission/cannot determine (Permission denied)/' \
                          > "${f}.expected"
