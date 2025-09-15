@@ -27,7 +27,7 @@ https://github.com/mullk/CompSys-MTK-
 
 3. Kør programmet:
 
-bash test.sh
+   bash test.sh
 
 
 ## 3. GenAI Citation og Refleksion
