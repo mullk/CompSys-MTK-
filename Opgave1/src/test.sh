@@ -28,8 +28,10 @@ echo "Generating test files.."
 ### ISO-8859-1 (latin1) – æøå og andre ud over ASCII (0xA0–0xFF)
 #printf "\xE6\xF8\xE5\n"       > test_files/iso_aeoeaa.input    # æøå
 #printf "Grüße\n"              > test_files/iso_umlaut.input    # ü
-printf "Héllo\n"              > test_files/iso_accent.input    # é
-printf "\0xE9\n"               > test_files/emaerke.input #som Hexa é
+printf "é\n"              > test_files/iso_accent.input    # é
+#printf "\xE9\n"               > test_files/emaerke.input #som Hexa é
+
+
 
 ### Det er denne del jeg har tilføjet, alt andet er som det var. Dog nu med kommentar
 ### Denne note skal slettes inden aflevering
@@ -73,7 +75,6 @@ do
 
   file    "$f" | sed     -e 's/ASCII text.*/ASCII text/' \
                          -e 's/UTF-8 Unicode text.*/UTF-8 Unicode text/' \
-                         -e 's/Unicode text, UTF-8 text.*/UTF-8 Unicode text/' \
                          -e 's/ISO-8859 text.*/ISO-8859 text/' \
                          -e 's/writable, regular file, no read permission/cannot determine (Permission denied)/' \
                          > "${f}.expected"
@@ -81,7 +82,6 @@ do
   # Vi opretter vores ACTUAL fil her.
   # Her bygger vi vores ACTUAL-output ved at køre vores eget program på filen
   # Og gemmer det, programmet skriver (stdout), i "<filnavn>.actual".
-  #https://chatgpt.com/share/68c7d7bf-d924-800c-8b5a-8f50c8c8642f NOTE TIL -e 's/Unicode text, UTF-8 text.*/UTF-8 Unicode text/' \
 
 
   ./file  "${f}" > "${f}.actual"

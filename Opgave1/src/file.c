@@ -189,7 +189,7 @@ int main(int argc, char *argv[]) {
         }
     }
     if (utf8_valid) {
-        fprintf(stdout, "%s: UTF-8 Unicode text\n", path);
+        fprintf(stdout, "%s: Unicode text, UTF-8 text\n", path);
         return EXIT_SUCCESS;
     }
 
