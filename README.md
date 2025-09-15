@@ -23,12 +23,11 @@ https://github.com/mullk/CompSys-MTK-
 
 2. Navigér til projektmappen:
 
-   cd 
-
+   cd ...\MTK-Gruppen\CompSys-MTK-\Opgave1\src
 
 3. Kør programmet:
 
-
+bash test.sh
 
 
 ## 3. GenAI Citation og Refleksion
