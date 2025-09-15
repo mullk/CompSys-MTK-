@@ -78,4 +78,8 @@ https://cplusplus.com/reference/cstdio/fgetc/
 ferror
 https://cplusplus.com/reference/cstdio/ferror/?kw=ferror
 
+fread
+https://cplusplus.com/reference/cstdio/fread/
 
+size_t
+https://cplusplus.com/reference/cstdio/size_t/
