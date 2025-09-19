@@ -136,7 +136,7 @@ static bool is_iso8859(unsigned char *buf, size_t len) {
         // 3-byte sekvens (1110xxxx 10xxxxxx 10xxxxxx)
         if (len != 3) return false;
         return is_continuation(seq[1]) && is_continuation(seq[2]);
-    } else if ((b0 & 0xF8) == 0xF0) {
+    } else if ((b0 & 0xF8) == 0xF0 && b0 <= 0xF4) {
         // 4-byte sekvens (11110xxx 10xxxxxx 10xxxxxx 10xxxxxx)
         if (len != 4) return false;
         return is_continuation(seq[1]) && is_continuation(seq[2]) && is_continuation(seq[3]);
