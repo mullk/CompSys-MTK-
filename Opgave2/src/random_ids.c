@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
-
+#include <stdint.h>
+#include <time.h>
 #include "record.h"
 
 int main(int argc, char** argv) {
