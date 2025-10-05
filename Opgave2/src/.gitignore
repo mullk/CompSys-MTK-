@@ -1,0 +1,16 @@
+# Store datafiler
+data/
+*.tsv
+*.dat
+*.bin
+
+# Kompilerede filer
+*.o
+id_query_*
+coord_query_*
+random_ids
+*.exe
+
+# IDE- og systemmapper
+.vscode/
+.DS_Store
