@@ -1,0 +1,71 @@
+Commands for make
+
+make id_query_eytzinger
+make id_query_naive
+make id_query_binsort
+make id_query_indexed
+make coord_query_naive
+make coord_query_kdtree
+
+
+Commands for at få vores test udsnit
+
+For koordinater:
+tail -n +2 data/20000records.tsv | awk -F'\t' '{print $7, $8}' | head -n 100 > data/random_coords.txt
+
+
+
+# Debug og test filer
+./coord_query_naive   data/20000records.tsv < data/test_coords.txt
+./coord_query_kdtree  data/20000records.tsv < data/test_coords.txt
+
+
+
+# Lille datasæt (20.000 records)
+time ./id_query_naive     data/20000records.tsv < data/random_ids.txt     > /dev/null
+time ./id_query_indexed   data/20000records.tsv < data/random_ids.txt     > /dev/null
+time ./id_query_binsort   data/20000records.tsv < data/random_ids.txt     > /dev/null
+time ./id_query_eytzinger data/20000records.tsv < data/random_ids.txt     > /dev/null
+time ./coord_query_naive  data/20000records.tsv < data/random_coords.txt  > /dev/null
+time ./coord_query_kdtree data/20000records.tsv < data/random_coords.txt  > /dev/null
+
+time ./id_query_naive     data/20000records.tsv < data/Bigrandom_ids.txt  > /dev/null
+time ./id_query_indexed   data/20000records.tsv < data/Bigrandom_ids.txt  > /dev/null
+time ./id_query_binsort   data/20000records.tsv < data/Bigrandom_ids.txt  > /dev/null
+time ./id_query_eytzinger data/20000records.tsv < data/Bigrandom_ids.txt  > /dev/null
+time ./coord_query_naive  data/20000records.tsv < data/Bigcoords.txt      > /dev/null
+time ./coord_query_kdtree data/20000records.tsv < data/Bigcoords.txt      > /dev/null
+
+
+
+# Mellemstort datasæt (2 mio records)
+time ./id_query_naive     data/2000000records.tsv < data/random_ids.txt    > /dev/null
+time ./id_query_indexed   data/2000000records.tsv < data/random_ids.txt    > /dev/null
+time ./id_query_binsort   data/2000000records.tsv < data/random_ids.txt    > /dev/null
+time ./id_query_eytzinger data/2000000records.tsv < data/random_ids.txt    > /dev/null
+time ./coord_query_naive  data/2000000records.tsv < data/random_coords.txt > /dev/null
+time ./coord_query_kdtree data/2000000records.tsv < data/random_coords.txt > /dev/null
+
+time ./id_query_naive     data/2000000records.tsv < data/Bigrandom_ids.txt > /dev/null
+time ./id_query_indexed   data/2000000records.tsv < data/Bigrandom_ids.txt > /dev/null
+time ./id_query_binsort   data/2000000records.tsv < data/Bigrandom_ids.txt > /dev/null
+time ./id_query_eytzinger data/2000000records.tsv < data/Bigrandom_ids.txt > /dev/null
+time ./coord_query_naive  data/2000000records.tsv < data/Bigcoords.txt     > /dev/null
+time ./coord_query_kdtree data/2000000records.tsv < data/Bigcoords.txt     > /dev/null
+
+
+
+# Hele planeten (26 mio records!)
+time ./id_query_naive     data/planet-latest_geonames.tsv < data/random_ids.txt    > /dev/null
+time ./id_query_indexed   data/planet-latest_geonames.tsv < data/random_ids.txt    > /dev/null
+time ./id_query_binsort   data/planet-latest_geonames.tsv < data/random_ids.txt    > /dev/null
+time ./id_query_eytzinger data/planet-latest_geonames.tsv < data/random_ids.txt    > /dev/null
+time ./coord_query_naive  data/planet-latest_geonames.tsv < data/random_coords.txt > /dev/null
+time ./coord_query_kdtree data/planet-latest_geonames.tsv < data/random_coords.txt > /dev/null
+
+time ./id_query_naive     data/planet-latest_geonames.tsv < data/Bigrandom_ids.txt > /dev/null
+time ./id_query_indexed   data/planet-latest_geonames.tsv < data/Bigrandom_ids.txt > /dev/null
+time ./id_query_binsort   data/planet-latest_geonames.tsv < data/Bigrandom_ids.txt > /dev/null
+time ./id_query_eytzinger data/planet-latest_geonames.tsv < data/Bigrandom_ids.txt > /dev/null
+time ./coord_query_naive  data/planet-latest_geonames.tsv < data/Bigcoords.txt     > /dev/null
+time ./coord_query_kdtree data/planet-latest_geonames.tsv < data/Bigcoords.txt     > /dev/null
