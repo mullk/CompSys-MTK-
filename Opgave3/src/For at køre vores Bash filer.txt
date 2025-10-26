@@ -1,0 +1,23 @@
+For at køre vores Bash filer
+
+
+
+
+## Først skal man give bash-filen tilladelse til at blive kørt som et program:
+
+chmod +x benchmark_avg_histogram.sh
+
+## For at køre Bash-filen
+./benchmark_avg_histogram.sh
+
+
+
+
+
+
+## Lavet for at kunne gøre på Windows
+## Først skal man give bash-filen tilladelse til at blive kørt som et program:
+chmod +x benchmark_avg_fauxgrep_Win.sh
+
+## For at køre Bash-filen
+./benchmark_avg_fauxgrep_Win.sh malloc bigtest 4
