@@ -119,6 +119,12 @@ int main(int argc, char **argv)
     //generate_random_salt(salt);
     memcpy(my_address->salt, salt, SALT_LEN);
 
+    char salted[PASSWORD_LEN + SALT_LEN];
+    memcpy(salted, password, PASSWORD_LEN);
+    memcpy(&salted[PASSWORD_LEN], salt, SALT_LEN);
+    
+    get_data_sha(salted, my_address->signature, PASSWORD_LEN + SALT_LEN, SHA256_HASH_SIZE);
+
     // Setup the client and server threads 
     pthread_t client_thread_id;
     pthread_t server_thread_id;
