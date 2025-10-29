@@ -1,0 +1,788 @@
+Noter til opgave A3 ud fra Non-Blocking server and security
+
+Et iterativt serverdesign betyder, at serveren kun håndterer én klient ad gangen.
+Når en klient forbinder, behandles dens forespørgsel fuldt ud, før serveren accepterer en ny. Det gør systemet simpelt, men ineffektivt, da alle andre klienter må vente, mens serveren arbejder.
+
+Når en ny klient forsøger at forbinde, bliver forbindelsen godt nok oprettet — TCP-manageren lægger den i en kø kaldet listen backlog — men klienten får intet svar, før serveren er klar. Serverens read()-kald blokerer, fordi den venter på input fra den første klient, hvilket betyder, at hele systemet står stille, selvom andre klienter står i kø.
+
+Dette er den grundlæggende begrænsning ved iterative servere: de kan ikke udnytte samtidighed. Hvis den første klient fx stopper med at sende data (fx brugeren går til frokost), fryser serveren, og alle andre forbindelser ignoreres, indtil den er færdig.
+
+Konklusion:
+Iterative servere er enkle, men blokerende og ineffektive.
+I moderne netværksprogrammering foretrækker man derfor concurrent designs, der kan betjene flere klienter samtidigt ved hjælp af tråde, processer eller events.
+
+
+
+
+
+
+
+
+For at løse problemet med iterative servers introduceres concurrent servers, som kan håndtere flere klienter samtidigt.  
+I stedet for at vente på, at én klient bliver færdig, oprettes en ny kontrolstrøm (flow) for hver klient.  
+På den måde kan én tråd eller proces håndtere én klient, mens hovedserveren fortsætter med at tage imod nye forbindelser.
+
+Der findes tre grundlæggende måder at opnå samtidighed (concurrency) på:
+
+1) Process-baseret – hver klient får sin egen proces (via fork())  
+2) Event-baseret – én proces håndterer mange klienter via I/O-multiplexing (select, epoll)  
+3) Thread-baseret – hver klient får sin egen tråd i samme proces  
+
+
+------------------------------------------------------------
+PROCESS-BASEREDE SERVERE
+------------------------------------------------------------
+
+Et process-baseret design betyder, at serveren opretter en ny child-proces for hver ny klient.  
+Når serveren accepterer en forbindelse, laver parent-processen et fork()-kald.  
+fork() opretter en kopi af den nuværende proces, og denne nye proces (child) håndterer klienten uafhængigt af de andre.
+
+Parent-processen fortsætter med at acceptere nye forbindelser, mens hver child-proces behandler sin egen klient.  
+Dette skaber ægte samtidighed, fordi hver proces har sin egen hukommelse og køres separat i operativsystemet.
+
+Eksempel (forenklet fra forelæsningen):
+
+while (1) {
+    connfd = accept(listenfd, ...);     // Venter på en ny klient
+    if (fork() == 0) {                  // Opretter child-proces
+        close(listenfd);                // Child skal ikke lytte på nye forbindelser
+        echo(connfd);                   // Funktion der håndterer klientens data
+        close(connfd);                  // Lukker klientforbindelsen
+        exit(0);                        // Afslutter child-processen
+    }
+    close(connfd);                      // Parent lukker sin kopi af forbindelsen
+}
+
+Forklaring af centrale dele:
+- accept() – Venter på, at en ny klient opretter forbindelse.  
+- fork() – Opretter en ny proces, der kører en kopi af koden uafhængigt.  
+- close() – Lukker socket'en, når forbindelsen er afsluttet.  
+- echo() – En funktion, der modtager og sender data tilbage til klienten (typisk til test).  
+
+Bemærk, at efter fork() eksisterer der to næsten identiske processer:
+- Parent-processen fortsætter hovedløkken og accepterer nye forbindelser.  
+- Child-processen håndterer kommunikationen med klienten og afslutter derefter.  
+
+------------------------------------------------------------
+ULEMPER VED PROCESS-BASEREDE SERVERE
+------------------------------------------------------------
+
+Selvom denne metode er simpel og let at forstå, har den nogle vigtige ulemper:
+
+1) Høj overhead  
+   - At oprette og lukke processer er tungt for systemet.  
+   - Hver ny proces kræver en komplet kopi af programmets hukommelse.  
+   - Dette kan blive meget ineffektivt ved mange samtidige klienter.
+
+2) Vanskelig deling af data  
+   - Hver proces har sit eget adresserum (egen hukommelse).  
+   - Deling af information mellem processer kræver IPC (Inter-Process Communication),  
+     f.eks. ved hjælp af pipes, shared memory eller semaforer.
+
+3) Ressourceforbrug  
+   - Hver proces har sit eget sæt filbeskrivelser og kræver mere RAM.  
+   - Hvis mange klienter forbinder på én gang, kan det belaste systemet kraftigt.
+
+------------------------------------------------------------
+KONKLUSION
+------------------------------------------------------------
+
+Process-baserede servere er lette at implementere og forstå, fordi de adskiller hver klient helt fra de andre.  
+Til gengæld har de en høj ressourceomkostning og skalerer dårligt ved mange samtidige klienter.  
+
+Derfor bruges denne model ofte som introduktion til concurrency, men ikke i moderne systemer,  
+hvor man ønsker bedre performance og lavere overhead.
+
+
+
+
+
+
+
+------------------------------------------------------------
+BEGRÆNSNINGER VED PROCESS-BASEREDE SERVERE
+------------------------------------------------------------
+
+Selvom process-baserede servere giver ægte samtidighed, har de flere praktiske problemer og begrænsninger i virkelige systemer.
+
+------------------------------------------------------------
+Zombie-processer
+------------------------------------------------------------
+
+Når en child-proces afslutter, men parent-processen ikke “reaper” den (dvs. ikke henter exit-status med wait()),  
+bliver den liggende i systemets procesliste som en såkaldt "zombie-proces".  
+
+En zombie-proces er teknisk set afsluttet, men stadig registreret i operativsystemet,  
+fordi dens afslutningsstatus endnu ikke er blevet læst af parent-processen.  
+
+Dette fører til, at der ophobes ubrugte processtrukturer i hukommelsen over tid,  
+og kan i værste fald føre til hukommelseslækager eller systemfejl,  
+hvis serveren ikke rydder korrekt op ved hjælp af wait() eller signalhåndtering.
+
+------------------------------------------------------------
+Filbeskrivelser skal lukkes korrekt
+------------------------------------------------------------
+
+Efter et fork() har både parent og child en kopi af den samme socket-forbindelse (connfd).  
+Hvis parent ikke lukker sin kopi, forbliver reference-tælleren for socket’en aktiv,  
+hvilket betyder, at forbindelsen aldrig bliver lukket helt – selv når child-processen afslutter.
+
+Dette kan føre til, at forbindelser "hænger" i systemet og optager ressourcer,  
+indtil programmet manuelt bliver genstartet eller tvunget til at frigive dem.
+
+Kort sagt: **alle sockets skal altid lukkes i både parent og child**,  
+så snart de ikke længere skal bruges.
+
+------------------------------------------------------------
+Overhead og skalering
+------------------------------------------------------------
+
+Hver klient kræver en ny proces, hvilket betyder at operativsystemet skal oprette en fuld kopi af programmets hukommelsesrum.  
+Dette er dyrt i CPU-tid og RAM, og det skalerer dårligt, når mange klienter forbinder samtidigt.
+
+Derudover er konteksskift (process skift) tungere end trådskift,  
+fordi operativsystemet skal skifte hele hukommelsestilstanden for hver proces.  
+
+Derfor er process-baserede servere hurtigere end iterative,  
+men stadig for tunge til meget store netværksapplikationer med hundreder eller tusinder af klienter.
+
+------------------------------------------------------------
+MOTIVATION FOR EVENT-BASEREDE SERVERE
+------------------------------------------------------------
+
+For at undgå denne overhead introduceres **event-baserede servere**,  
+hvor én enkelt proces håndterer alle klienter ved hjælp af I/O-multiplexing.
+
+I stedet for at have mange processer eller tråde, holder serveren styr på alle åbne forbindelser (socket descriptors) i et array,  
+og tjekker periodisk, hvilke af dem der har data klar til at blive læst eller skrevet.
+
+Når der er data klar på en forbindelse, behandles den — ellers springes den over.  
+Dette gøres typisk ved hjælp af systemkald som **select()**, **poll()** eller **epoll()**.
+
+------------------------------------------------------------
+Grundidé for event-baserede servere
+------------------------------------------------------------
+
+1) Serveren holder styr på alle aktive forbindelser (connfds) i et array eller en liste.  
+2) Den kalder select() for at finde ud af, hvilke forbindelser der har nye data.  
+3) Hvis listenfd (den lyttende socket) har data → accepter en ny klient.  
+4) Hvis et eksisterende connfd har data → læs og behandl klientens anmodning.  
+
+Alt dette sker i **én tråd og én proces**, hvilket gør event-baserede servere ekstremt effektive,  
+fordi de undgår overhead fra fork() og tråde.
+
+------------------------------------------------------------
+EKSEMPEL OG FORDELE
+------------------------------------------------------------
+
+Event-baserede servere bruges i højtydende netværkssystemer som **nginx** og **Node.js**.  
+De kan håndtere tusindvis af samtidige klienter, fordi de ikke opretter en separat proces eller tråd for hver forbindelse.  
+
+I stedet reagerer de på "events" (f.eks. nye data eller forbindelser),  
+hvilket gør dem særligt velegnede til I/O-tunge applikationer som webservers, databaser og chat-systemer.
+
+------------------------------------------------------------
+KONKLUSION
+------------------------------------------------------------
+
+Process-baserede servere giver ægte samtidighed, men er tunge og vanskelige at skalere.  
+Event-baserede servere er en naturlig videreudvikling, som reducerer overhead og gør det muligt  
+at håndtere mange forbindelser effektivt i en enkelt proces ved hjælp af I/O-multiplexing.
+
+Til gengæld kræver event-baserede servere mere kompleks kode og præcis styring af I/O-events,  
+da man selv skal holde styr på, hvilke sockets der er klar til at læse eller skrive.
+
+
+
+
+
+
+
+
+
+------------------------------------------------------------
+THREAD-BASEREDE SERVERE OG EKSEKVERINGSMODEL
+------------------------------------------------------------
+
+En thread-baseret server fungerer næsten som en process-baseret server,  
+men i stedet for at kalde fork() for hver ny klient, oprettes der en ny **tråd** i den samme proces.  
+
+Hver tråd håndterer én klientforbindelse, mens hovedtråden fortsætter med at acceptere nye forbindelser.  
+Denne tilgang kombinerer fordelene ved processer (parallel udførsel) og events (lav overhead)  
+– og kaldes derfor ofte en **hybrid-model**.
+
+------------------------------------------------------------
+IMPLEMENTERING MED PTHREADS
+------------------------------------------------------------
+
+Thread-baserede servere bruger POSIX Threads (Pthreads) – et standardbibliotek i C til håndtering af tråde.  
+Pthreads gør det muligt at oprette, styre og synkronisere tråde på tværs af Unix-baserede systemer.
+
+Vigtige funktioner:
+- pthread_create() – opretter en ny tråd.  
+- pthread_join() – venter på, at en tråd afslutter (blokkerende).  
+- pthread_self() – returnerer ID’et for den aktuelle tråd.  
+- pthread_detach() – frigiver trådens ressourcer automatisk, når den afsluttes.  
+- pthread_mutex_lock() / pthread_mutex_unlock() – beskytter delt data mod race conditions.
+
+------------------------------------------------------------
+FÆLLES HUKOMMELSE OG SYNKRONISERING
+------------------------------------------------------------
+
+Alle tråde deler **samme adresserum** – det betyder, at de har adgang til de samme globale variabler, heap og åbne filer.  
+Dette gør datadeling let, men skaber også risiko for fejl, hvis flere tråde skriver til den samme variabel samtidig.
+
+For at undgå **race conditions** (når flere tråde forsøger at ændre data samtidig)  
+bruges **mutex-låse** til at sikre, at kun én tråd ad gangen kan ændre fælles data.  
+
+En race condition kan føre til uforudsigelige resultater, datakorruption eller endda programnedbrud,  
+så korrekt brug af mutex og synkronisering er helt afgørende.
+
+------------------------------------------------------------
+EKSEMPEL: THREAD-BASERET ECHO-SERVER
+------------------------------------------------------------
+
+Dette er et eksempel fra forelæsningen på en simpel tråd-baseret echo-server, der håndterer flere klienter samtidigt:
+
+int main(int argc, char **argv) {
+    int listenfd, *connfdp;
+    socklen_t clientlen;
+    struct sockaddr_storage clientaddr;
+    pthread_t tid;
+
+    listenfd = compsys_helper_open_listenfd(argv[1]);
+    while (1) {
+        clientlen = sizeof(clientaddr);
+        connfdp = malloc(sizeof(int));
+        *connfdp = accept(listenfd, (SA *) &clientaddr, &clientlen);
+        pthread_create(&tid, NULL, thread, connfdp);
+    }
+}
+
+void *thread(void *vargp) {
+    int connfd = *((int *)vargp);
+    pthread_detach(pthread_self());  // Tråden frigør automatisk sine ressourcer
+    free(vargp);                     // Frigør hukommelse, der blev allokeret til forbindelsen
+    echo(connfd);                    // Funktion, der håndterer klientens data
+    close(connfd);                   // Lukker forbindelsen til klienten
+    return NULL;
+}
+
+Forklaring:
+- Hovedtråden accepterer klientforbindelser og opretter en ny tråd for hver forbindelse.  
+- pthread_detach() gør, at tråden kører uafhængigt og frigives automatisk, når den afsluttes –  
+  man behøver derfor ikke kalde pthread_join() på den.  
+- free(vargp) og close(connfd) frigør ressourcer og lukker socket’en, så systemet ikke løber tør for forbindelser.  
+- echo() udfører selve behandlingen af klientens data, typisk ved at læse og sende beskeder tilbage.  
+
+------------------------------------------------------------
+EKSEKVERINGSMODEL OG DATASIKKERHED
+------------------------------------------------------------
+
+Hver klient får sin egen tråd, som kører parallelt med de andre.  
+Trådene deler alt i processens hukommelsesrum (heap, globale variabler, filbeskrivelser osv.),  
+men hver tråd har sin egen **stack**, hvor lokale variabler gemmes separat.  
+
+Det betyder, at trådene kan dele konfigurationer, cache og logs –  
+men også, at man skal være forsigtig med globalt data for at undgå datakonflikter.  
+
+Visualiseret ser det sådan ud:
+
+Client 1  →  Thread A  
+Client 2  →  Thread B  
+Main thread →  accepterer nye forbindelser  
+
+------------------------------------------------------------
+FORDELE OG ULEMPER
+------------------------------------------------------------
+
+Fordele:
+- Hurtigere og lettere end process-baserede servere.  
+- Deling af data er nem (samme hukommelsesrum).  
+- Giver god performance og udnytter multicore-processorer effektivt.  
+
+Ulemper:
+- Risiko for race conditions, hvis mutex-låse ikke bruges korrekt.  
+- Fejl i én tråd kan potentielt påvirke hele programmet.  
+- Debugging kan være vanskelig, fordi tråde kører asynkront.
+
+------------------------------------------------------------
+KONKLUSION
+------------------------------------------------------------
+
+Thread-baserede servere er den mest anvendte model i praksis,  
+fordi de kombinerer effektivitet, fleksibilitet og parallelitet.  
+
+De kræver dog omhyggelig håndtering af delt data gennem mutex-låse  
+for at undgå race conditions og sikre stabile resultater.  
+
+Dette gør dem ideelle til moderne netværksprogrammer, hvor mange klienter skal betjenes samtidigt,
+og hvor man samtidig ønsker høj ydeevne uden den tunge overhead fra process-baserede servere.
+
+
+
+
+
+
+
+
+------------------------------------------------------------
+PRE-THREADED SERVERMODEL (THREAD-POOL DESIGN)
+------------------------------------------------------------
+
+I stedet for at oprette en ny tråd for hver klient (som i den klassiske thread-baserede model),  
+kan serveren på forhånd oprette et antal **arbejdstråde** (worker threads), der genbruges.  
+
+Denne model kaldes en **thread pool** eller **pre-threaded server**.  
+Hovedidéen er at have et fast antal tråde klar på forhånd, som hele tiden venter på nye opgaver.  
+Når en klient forbinder, tildeles den en ledig tråd i poolen, og når arbejdet er færdigt,  
+går tråden tilbage i poolen og venter på næste opgave.
+
+------------------------------------------------------------
+HVORDAN DET FUNGERER
+------------------------------------------------------------
+
+1) En **master-tråd** (hovedtråden) accepterer nye klientforbindelser via accept().  
+2) Hver forbindelse (socket descriptor) lægges i en **fælles buffer eller job-kø**.  
+3) Et antal **worker-tråde** overvåger denne kø.  
+4) Når en ny forbindelse er tilgængelig, henter en tråd den og håndterer klienten.  
+5) Når arbejdet er udført, returnerer tråden til poolen og afventer næste opgave.  
+
+Denne model udnytter tråde effektivt, fordi der ikke oprettes og destrueres nye tråde hele tiden.  
+I stedet genbruges de samme tråde igen og igen, hvilket reducerer overhead betydeligt.
+
+------------------------------------------------------------
+KONCEPTUELT EKSEMPEL
+------------------------------------------------------------
+
+Master-thread:  
+    while (1) {
+        connfd = accept(listenfd, ...);     // Accepter ny klient
+        job_queue_push(connfd);             // Læg jobbet i køen
+    }
+
+Worker-thread:  
+    while (1) {
+        connfd = job_queue_pop();           // Hent næste opgave fra køen
+        echo(connfd);                       // Behandl klientens anmodning
+        close(connfd);                      // Luk forbindelsen
+    }
+
+Forklaring:
+- **job_queue_push()** og **job_queue_pop()** bruges til at lægge og hente forbindelser fra køen.  
+- **mutex-låse** og **condition variables** anvendes til at sikre,  
+  at kun én tråd ad gangen tilgår køen, og at tråde venter effektivt på nye jobs.  
+- Hver worker-tråd arbejder uafhængigt, men koordinerer gennem den fælles kø.
+
+------------------------------------------------------------
+VIGTIGE BEGREBER
+------------------------------------------------------------
+
+- **Worker thread**: En tråd, der udfører arbejdet (betjener klienter).  
+- **Job queue**: En delt datastruktur, hvor nye opgaver (forbindelser) placeres.  
+- **Condition variable**: Bruges til at vække tråde, når der er nye opgaver i køen.  
+- **Mutex (mutual exclusion)**: Sikrer, at kun én tråd ad gangen kan ændre køens tilstand.  
+
+Disse mekanismer bruges sammen for at undgå race conditions og deadlocks,  
+samt for at sikre, at ingen tråde spilder CPU-tid på at vente aktivt.
+
+------------------------------------------------------------
+FORDELE
+------------------------------------------------------------
+
+- Mindre overhead, da tråde oprettes én gang og genbruges.  
+- Stabil ressourceforbrug (fast antal tråde).  
+- Høj effektivitet og hurtig respons ved mange samtidige klienter.  
+- Let at kombinere med non-blocking I/O for yderligere skalérbarhed.  
+
+------------------------------------------------------------
+ULEMPER
+------------------------------------------------------------
+
+- Antallet af samtidige klienter er begrænset af pool-størrelsen.  
+- Implementeringen er mere kompleks og kræver korrekt brug af mutex og condition variables.  
+- Hvis alle tråde i poolen er optaget, skal nye forbindelser vente i køen (kan skabe forsinkelse).  
+
+------------------------------------------------------------
+SAMMENLIGNING AF MODELLER
+------------------------------------------------------------
+
+Processer   →  Nemme at forstå, men tunge at køre.  
+Events      →  Hurtige og lette, men svære at programmere.  
+Tråde       →  Fleksible, men kræver forsigtig synkronisering.  
+Thread-pools →  Den moderne standardløsning – effektiv, kontrollerbar og stabil.  
+
+------------------------------------------------------------
+KONKLUSION
+------------------------------------------------------------
+
+Thread-pool-modellen repræsenterer en balanceret tilgang mellem ydeevne og kompleksitet.  
+Den undgår den store overhead ved at oprette tråde for hver klient,  
+og giver samtidig god kontrol over ressourceforbruget.  
+
+Denne model anvendes i mange moderne serversystemer som Apache, Nginx og Java webservers,  
+fordi den kan håndtere mange forbindelser effektivt og stabilt.
+
+
+
+
+
+
+
+
+
+Concurrent servers i Python
+
+I Python findes et modul kaldet socketserver, som forenkler håndteringen af netværksservere.
+Her kan man vælge flere basisklasser – den mest almindelige er ThreadingTCPServer, som automatisk håndterer hver klient i sin egen tråd.
+
+import socketserver
+
+class MyHandler(socketserver.BaseRequestHandler):
+    def handle(self):
+        data = self.request.recv(1024)
+        self.request.sendall(data)
+
+with socketserver.ThreadingTCPServer(("127.0.0.1", 5678), MyHandler) as server:
+    server.serve_forever()
+
+handle() definerer, hvad der sker for hver klient.
+
+ThreadingTCPServer starter en ny tråd for hver forbindelse.
+
+serve_forever() holder serveren i gang og accepterer nye forbindelser løbende.
+
+Dette svarer konceptuelt til C-versionen, men Python abstraherer trådhåndtering og sockets væk.
+
+
+
+
+
+
+Introduktion til sikkerhed — Hashes, Salt og Autentifikation
+Hvorfor sikkerhed i netværksprogrammering?
+
+Når flere klienter forbinder til en server (eller et P2P-netværk som i A3-opgaven), skal man sikre, at:
+
+brugerne kan identificeres pålideligt,
+data ikke kan ændres af uvedkommende,
+og at gemte adgangskoder ikke kan misbruges, hvis systemet kompromitteres.
+Derfor anvendes kryptografiske hashfunktioner og salt som en del af autentifikationen.
+
+Hashfunktioner – grundidé
+
+En hashfunktion tager et vilkårligt input (fx et password) og omsætter det til en fast-længde streng af bits kaldet en hashværdi.
+
+eksempel
+
+input: "password123"
+output: "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f"
+
+Egenskaber for en god hashfunktion:
+
+Deterministisk – samme input giver altid samme output.
+Ensartet fordeling – små ændringer i input giver helt forskellig hash.
+Ikke-reversibel – man kan ikke udlede input fra hashværdien.
+Kollisionsresistent – to forskellige input bør aldrig give samme hash.
+Moderne hashfunktioner som SHA-256 og SHA-512 opfylder disse krav.
+
+
+Hvad er “Salt” – og hvorfor det er vigtigt
+
+Et salt er et tilfældigt genereret datasæt, som tilføjes passwordet før det hashes.
+Dette gør hver hash unik – selv hvis to brugere har samme password.
+
+Password: "diku123"
+Salt:     "9F3A7C2E"
+Hash:     SHA256("diku1239F3A7C2E")
+
+Uden salt -> samme password = samme hash
+Med salt -> samme password = forskellige hashes
+
+
+Formålet med salt:
+
+Gør rainbow tables ubrugelige (forhindre præ-beregnede hash-opslag).
+Beskytter mod massive brute-force angreb, fordi hvert hash skal gættes separat.
+Øger entropien (uorden), hvilket gør hashing markant sikrere.
+Hashes og salt i praksis (relateret til A3-projektet)
+
+I P2P-opgaven fra A3 skal hver peer oprette et password og kombinere det med et salt (enten genereret eller foruddefineret).
+Koden anvender f.eks.:
+
+char salt[SALT_LEN+1] = "0123456789ABCDEF";
+memcpy(my_address->salt, salt, SALT_LEN);
+
+
+Ved login eller registrering:
+
+1) Bruger indtaster password.
+2) Programmet kombinerer det med det lagrede salt.
+3) sha256()-funktionen beregner hashværdien.
+4) Hashen bruges som identifikation og evt. til godkendelse mellem peers.
+
+Dette sikrer, at selvom nogen får adgang til systemets data, kan de ikke umiddelbart rekonstruere brugerens password.
+
+
+Kryptografiske hashfunktioner – vigtig forståelse
+Hashes krypterer ikke data; de transformerer det på en envejsmåde.
+Hashing kan ikke “afkodes” – man kan kun gætte input og se, om det giver samme hash.
+For ekstra sikkerhed kan man bruge “pepper” – et hemmeligt stykke data gemt uden for databasen (bruges dog sjældent i simple systemer).
+
+
+
+
+
+Praktisk anvendelse af Hashing og Salt i netværkssikkerhed
+Formålet med hashing i netværk
+I netværksprogrammer (som fx dit A3 peer-to-peer system) bruges hashing og salt som identitets- og tillidsmekanismer.
+Formålet er ikke kun at beskytte lokale passwords, men også at kunne verificere en peers identitet uden nogensinde at sende passwordet direkte over netværket.
+Dette sikrer, at selv hvis data opsnappes (fx via sniffing), kan angriberen ikke udlede brugernes adgangskoder.
+
+
+Autentifikation gennem hashing
+
+Når to parter (fx peers i et P2P-netværk) skal etablere tillid, sker det typisk gennem følgende proces:
+
+1) Peer A genererer et salt og kombinerer det med sit password.
+
+2) Resultatet hashes med en funktion som SHA256.
+
+3) Peer A sender kun hashværdien (ikke passwordet!) til Peer B som bevis på identitet.
+
+4) Peer B laver den samme beregning lokalt – og sammenligner resultatet.
+Hvis de to hashes stemmer overens, er identiteten bekræftet.
+
+Denne metode kaldes en challenge–response autentifikation, fordi den baseres på et kryptografisk “bevis” i stedet for et simpelt password.
+
+
+
+
+
+Hvorfor ikke bare bruge en “egen hashfunktion”?
+
+Forelæsningen pointerer, at man aldrig selv bør implementere sin egen hashfunktion.
+Årsager:
+
+1) Egen implementering risikerer at mangle kryptografisk styrke (nem at forudsige, kollisionsfølsom, eller nem at brute-force).
+
+2) Kryptografiske funktioner kræver dyb matematisk validering – standarder som SHA256 og SHA512 er gennemtestede og optimerede.
+
+3) “Custom” hashfunktioner kan utilsigtet indføre mønstre, der gør dem forudsigelige.
+
+Kort sagt:
+Brug kendte, testede hashfunktioner — aldrig hjemmelavede.
+
+
+
+
+Om salte i praksis
+
+Et vigtigt punkt på disse slides er, at salt ikke skal holdes hemmeligt — det er ikke som en adgangskode.
+Salten lagres sammen med hashværdien, så systemet ved, hvordan passwordet skal kombineres næste gang brugeren logger ind.
+
+et Eksempel på hvordan noget kunne lagers
+
+user: anna
+salt: 9F2B17A4
+hash: 7eacaf4d9b7c51f7...
+
+
+Ved login:
+
+Brugeren taster password -> systemet tilføjer salt -> laver ny hash -> sammenligner med den gemte hash.
+
+Dette giver et sikkert og reproducerbart resultat uden nogensinde at gemme passwordet direkte.
+
+
+
+
+
+### Noter til selve opgaven ###
+
+I peer.c og sha256.c fra A3-projektet anvendes hashing på denne måde:
+
+Ved opstart skal brugeren oprette et password, som derefter kombineres med et salt.
+
+Programmet bruger funktionen generate_random_salt() (eller et fast salt i udviklingsfasen) til at oprette salten.
+
+sha256() bruges til at danne den kryptografiske signatur.
+
+Denne signatur sendes som en del af peerens registreringsbesked, så andre peers kan identificere den sikkert.
+
+Dermed fungerer hashværdien som en slags digitalt fingeraftryk for hver peer i netværket.
+
+
+
+
+
+
+
+
+Sikkerhed i praksis — Hashing, Salt og implementering i netværksprogrammer
+
+Fra teori til praksis
+I denne del af forelæsningen forbindes de to hovedtemaer:
+
+1) Concurrency – hvordan serveren håndterer flere klienter samtidigt.
+
+2) Security – hvordan brugernes identitet og data beskyttes.
+
+En moderne netværksserver skal altså både kunne håndtere mange samtidige forbindelser og samtidig sikre autentifikation og dataintegritet.
+
+
+Praktisk brug af hashing og salt i C
+
+I et typisk C-baseret netværksprogram (som A3’s peer) ser autentifikationen sådan ud:
+
+1) Når en peer starter, beder programmet brugeren om et password.
+2) Programmet genererer et salt (enten tilfældigt eller foruddefineret til test).
+3) Kombinationen af password + salt køres igennem en hashfunktion – fx sha256().
+4) Resultatet bruges som en unik identifikator for denne peer på netværket.
+5) Når peers kommunikerer, kan de sammenligne hashes for at bekræfte identitet, uden at afsløre selve passwordet.
+
+Eksempel fra forelæsningen og A3-koden:
+
+char password[PASSWORD_LEN];
+fprintf(stdout, "Create a password to proceed: ");
+scanf("%16s", password);
+char salt[SALT_LEN+1] = "0123456789ABCDEF";
+memcpy(my_address->salt, salt, SALT_LEN);
+
+Her anvendes et fast salt for konsistens i test, men i en virkelig applikation skal saltet være tilfældigt og unikt for hver bruger.
+
+Hvorfor hashing er vigtigt for netværksprogrammer
+
+Når en peer registrerer sig eller deler filer, skal systemet have en måde at sikre, at:
+
+kun autoriserede peers kan interagere,
+og at data ikke ændres under transmission.
+
+Ved at kombinere hashing og salting opnår man:
+
+Autentifikation: Peers kan genkende hinanden på hashværdier i stedet for passwords.
+Integritet: Man kan verificere, at beskeder og filer ikke er ændret (fx ved at sammenligne SHA256-summer).
+Privathed: Selve passwordet sendes aldrig over netværket.
+
+Hashing fungerer altså som en envejs “fingeraftryksteknologi”, der kan bruges både til identitet og kontrol af data.
+
+
+
+
+Typisk brugsmønster i P2P-systemer
+
+Når en ny peer tilføjes netværket:
+
+1) Peer’en registrerer sig hos en anden peer (den “initial peer”).
+2) Den sender sin IP, port, salt og hash-værdi.
+3) Den anden peer gemmer disse oplysninger i sin liste over kendte peers.
+4) Når netværket udveksler data, bruges disse værdier til at autentificere og opdatere forbindelser.
+
+Dette gør systemet tillidsfuldt uden en central server – sikkerhed skabes gennem kryptografiske identiteter, ikke via en database eller login-server.
+
+
+
+
+
+Hash-funktionens egenskaber i kontekst
+
+Envejs: Hashen kan ikke dekrypteres tilbage til passwordet.
+Unik: Små ændringer i input giver drastisk forskellige output.
+Kollisionsresistent: Det er ekstremt usandsynligt, at to forskellige input giver samme hash.
+Effektiv: Beregningen er hurtig nok til at bruges ved hver autentifikation, men langsom nok til at bremse brute-force-angreb.
+
+Derfor bruges hashing ikke kun til autentifikation, men også til:
+
+Filverifikation (kontrol af integritet efter download).
+Signaturer i distribuerede systemer (som blockchain).
+Datafingeraftryk i sikkerhedssystemer.
+
+
+
+
+
+
+
+Non-blocking I/O og moderne serverdesign
+
+Forelæsningen afsluttes med introduktionen af non-blocking I/O — et vigtigt princip i netværksprogrammering, hvor systemet ikke blokerer, når der ventes på data.
+
+I stedet for at sidde fast i et read() eller accept()-kald, kan programmet fortsætte med andre opgaver, mens det venter på input.
+Dette opnås typisk gennem I/O-multiplexing med systemkald som select(), poll() eller epoll().
+
+Idéen: En socket sættes i “non-blocking mode”, så systemet returnerer med det samme, selvom der ikke er data endnu.
+
+Dette gør det muligt at håndtere tusindvis af samtidige forbindelser med kun én tråd — især nyttigt for højtydende servere og P2P-netværk.
+
+
+
+Kombineret med concurrency
+
+Selvom non-blocking design kan stå alene, kombineres det ofte med threads eller thread-pools, hvor:
+
+én tråd håndterer netværkshændelser (accept, læsning, skrivning),
+og andre tråde bearbejder data, forespørgsler eller hashing i baggrunden.
+
+Denne kombination gør det muligt at:
+
+udnytte multicore-processorer,
+reducere idle time,
+og bevare responsivitet, selv under høj belastning.
+
+
+
+Sammenhæng med sikkerhed
+
+Når man arbejder med netværkskommunikation, skal sikkerhed tænkes ind i alle lag:
+
+1) Transportlaget: Brug af sikre forbindelser (fx TLS eller krypteret TCP).
+
+2) Applikationslaget: Autentifikation via hashing og salt.
+
+3) Dataintegritet: Brug af checksums og hash for at opdage manipulation.
+
+Hashing og salting sikrer, at brugernes identiteter og data forbliver private — men non-blocking servermodeller sørger for, at dette kan ske effektivt og parallelt uden flaskehalse.
+
+
+
+
+
+Samlet systemperspektiv
+
+Et moderne netværksprogram — som A3-opgaven — kombinerer disse elementer:
+
+Concurrency: Håndtering af mange samtidige klienter (threads, pools eller events).
+Security: Hashing og salt for autentifikation.
+Communication: Socket-baseret TCP/IP-protokol.
+Synchronization: Mutexes for at undgå race conditions i delte ressourcer.
+Scalability: Non-blocking I/O for at opretholde høj ydeevne under belastning.
+
+Med andre ord:
+Programmet skal både kunne arbejde parallelt og tænke sikkert — hver tråd eller socket skal beskytte sine data og samarbejde med de andre uden konflikt.
+
+
+
+Eksempel på konceptuel kobling til A3-peer
+
+I vores peer.c og peer.py anvender vi de samme principper:
+Serverdelen kører i en tråd, der konstant accepterer nye forbindelser.
+Clientdelen kører parallelt og kan samtidig forbinde til andre peers.
+Begge dele kører med mutex-beskyttede datastrukturer (f.eks. netværkslisten).
+Hashing og salt bruges til at identificere og validere peers på en sikker måde.
+
+Programmet er dermed et konkret eksempel på et thread-baseret, concurrent og sikkerhedsbevidst P2P-system.
+
+
+
+
+
+Konklusion – Hovedpointer fra forelæsningen
+
+Iterative servers er simple, men blokerende og ineffektive.
+Concurrent design (processer, events, tråde) gør servere responsive.
+Thread-pools og non-blocking I/O er de mest effektive moderne løsninger.
+Hashing og salt er nødvendige for sikker autentifikation i netværk.
+Kombinationen af samtidighed og sikkerhed er afgørende for stabile, pålidelige systemer.
+
+Kort sagt:
+Et godt netværksprogram er både hurtigt, sikkert og robust – og forstår at balancere mellem ydeevne (non-blocking concurrency) og beskyttelse (hashing og salt).
