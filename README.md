@@ -8,7 +8,7 @@
 **Navn:** Tobias Dübeck Kristensen  
 **KU-ID:** rlj430@alumni.ku.dk
 
-**Navn:** Mathias Fast Christensen 
+**Navn:** Mathias Fast Christensen  
 **KU-ID:** dhv501@alumni.ku.dk
 
 **GitHub Repository:**  
