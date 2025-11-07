@@ -7,6 +7,8 @@
 #include <string.h>
 #include <time.h>
 
+#include <stdbool.h>
+
 #ifdef __APPLE__
 #include "./endian.h"
 #else
@@ -38,6 +40,8 @@ NetworkAddress_t** network = NULL;
 // Antal peers i netværket. Starter ved 0, fordi vi endnu ikke kender 
 // nogen andre peers. Når vi fjerner en peer (f.eks. timeout), bliver den mindre.
 uint32_t peer_count = 0;
+
+bool run = true;
 
 /*
  * De snakker om hele    void* client_thread()      funktionen:
@@ -142,7 +146,31 @@ char peer_ip[IP_LEN];
 
 
 
+void respond(int fd, u_int32_t status, void* data, size_t bytes){
+    ReplyHeader_t header;
+    header.length = htobe32(bytes);
+    header.status = htobe32(status);
+    header.this_block = 0;
+    header.block_count = 1;
 
+    compsys_helper_writen(fd, &header, sizeof(header));
+}
+
+void register_peer(int fd){
+    printf("Registre peer\n");
+    respond(fd, STATUS_OK, NULL, 0);
+    assert(0);
+}
+
+void inform(){
+    printf("inform\n");
+    assert(0);
+}
+
+void retrive(){
+    printf("retrive\n");
+    assert(0);
+}
 
 /*
  * Function to act as basis for running the server thread. This thread will be
@@ -162,11 +190,53 @@ char peer_ip[IP_LEN];
 // Modtage beskeder (REGISTER, RETRIEVE, INFORM)
 // Sende svar tilbage (som i Python-versionens RequestHandler.handle())
 
-void* server_thread()
-{
-    // You should never see this printed in your finished implementation
-    printf("Server thread done\n");
+void* server_thread(){
+       char port[5];
+       sprintf(port, "%u", my_address->port);
+       port[5] = '\0';
+    
+       int fd = compsys_helper_open_listenfd(port);
+       if(fd == -1) printf("ERROR: %s\n", strerror(errno));
+    while(true){
+        int client_fd = accept(fd, NULL, NULL);
+        //TODO: handle error.
+        while(true){
+            compsys_helper_state_t state;
+            compsys_helper_readinitb(&state, client_fd);
+            RequestHeader_t header;
+            ssize_t bytes = compsys_helper_readn(client_fd, &header, sizeof(header));
 
+            header.port = be32toh(header.port);
+            header.command = be32toh(header.command);
+
+            if(bytes == -1){
+                if(errno == EBADF){
+                    break;
+                }else{
+                    printf("ERROR: %s\n", strerror(errno));
+                }
+            }else if(bytes == 0){
+                break; //Connection closed.
+            }
+            switch (header.command)
+            {
+            case COMMAND_REGISTER:
+                register_peer(client_fd);
+                break;
+            case COMMAND_INFORM:
+                inform();
+                break;
+            case COMMAND_RETREIVE:
+                retrive();
+                break;
+            default:
+                printf("ERROR: unkown command %u\n", header.command);
+                respond(client_fd, STATUS_MALFORMED, NULL, 0);
+                break;
+            }
+
+        }
+    }
     return NULL;
 }
 
