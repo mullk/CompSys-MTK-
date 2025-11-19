@@ -156,10 +156,74 @@ void respond(int fd, u_int32_t status, void* data, size_t bytes){
     compsys_helper_writen(fd, &header, sizeof(header));
 }
 
-void register_peer(int fd){
+void add_header(char* message, uint32_t payload_length){
+        char port[5];
+
+        memcpy(message, my_address->ip, IP_LEN);
+
+        sprintf(port, "%u", my_address->port);
+        port[5] = '\0';
+        memcpy(message + IP_LEN, port, PORT_LEN);
+        memcpy(message + (IP_LEN + PORT_LEN), my_address->signature, SHA256_HASH_SIZE);
+
+        uint32_t cmd = htobe32(COMMAND_INFORM);
+        sprintf(message + (IP_LEN + PORT_LEN + SHA256_HASH_SIZE), "%u", cmd);
+        uint32_t addr_len = htobe32(payload_length);
+        sprintf(message + (IP_LEN + PORT_LEN + SHA256_HASH_SIZE + sizeof(uint32_t)), "%u", addr_len);
+}
+
+void send_inform(){
+    for(uint32_t i = 0; i < peer_count - 1; i++){
+        size_t message_len = sizeof(RequestHeader_t) + PEER_ADDR_LEN;
+        char message[message_len];
+        add_header(&message[0], PEER_ADDR_LEN);
+
+        memcpy(message + (IP_LEN + PORT_LEN + SHA256_HASH_SIZE + sizeof(uint32_t) + sizeof(uint32_t)), network[peer_count - 1]->ip, IP_LEN);
+        sprintf(message + (IP_LEN + PORT_LEN + SHA256_HASH_SIZE + sizeof(uint32_t) + sizeof(uint32_t) + IP_LEN), "%u", network[peer_count - 1]->port);
+        memcpy(message + (IP_LEN + PORT_LEN + SHA256_HASH_SIZE + sizeof(uint32_t) + sizeof(uint32_t) + IP_LEN + PORT_LEN), my_address->signature, SHA256_HASH_SIZE);
+        memcpy(message + (IP_LEN + PORT_LEN + SHA256_HASH_SIZE + sizeof(uint32_t) + sizeof(uint32_t) + IP_LEN + PORT_LEN + SHA256_HASH_SIZE), my_address->salt, SALT_LEN);
+        
+        char port[5];
+        sprintf(port, "%u", network[i]->port);
+        port[5] = '\0';
+
+        compsys_helper_writen(compsys_helper_open_clientfd(network[i]->ip, port), message, message_len);
+    }
+}
+
+bool is_unregistrered(RequestHeader_t* data){
+    for(uint32_t i = 0; i < peer_count; i++){
+        if(network[i]->ip == data->ip) return false;
+    }
+    return true;
+}
+
+void register_peer(int fd, RequestHeader_t* data){
     printf("Registre peer\n");
-    respond(fd, STATUS_OK, NULL, 0);
-    assert(0);
+
+    //consgtruct answer
+
+    if(is_unregistrered(data)){
+        respond(fd, STATUS_OK, NULL, 0);
+    }else{
+        respond(fd, STATUS_PEER_EXISTS, NULL, 0);
+        return;
+    }
+    if(network != NULL){
+        network = realloc(network, sizeof(NetworkAddress_t*) * peer_count);
+    }else{
+        network = malloc(sizeof(NetworkAddress_t*));
+    }
+    network[peer_count] = malloc(sizeof(NetworkAddress_t));
+
+    memcpy(network[peer_count]->ip, data->ip, IP_LEN);
+    network[peer_count]->port = data->port;
+    memcpy(network[peer_count]->signature, data->signature, SHA256_HASH_SIZE);
+    //network[peer_count]->salt = data.
+
+    peer_count++;
+
+    send_inform();
 }
 
 void inform(){
@@ -221,7 +285,7 @@ void* server_thread(){
             switch (header.command)
             {
             case COMMAND_REGISTER:
-                register_peer(client_fd);
+                register_peer(client_fd, &header);
                 break;
             case COMMAND_INFORM:
                 inform();
