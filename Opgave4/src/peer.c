@@ -165,15 +165,15 @@ void send_to_client(char* message, size_t message_len, char ip[IP_LEN], uint32_t
     if(fd >= 0){
         ssize_t write = compsys_helper_writen(fd, message, message_len);
         if(write < 0){
-            printf("ERROR: trying to write to %c:%u\n", ip, port);
+            printf("ERROR: trying to write to %s:%u\n", ip, port);
         }
     }else{
         if(fd == -1){
-            printf("ERROR: trying to open %c:%u %s\n", ip, port, strerror(errno));
+            printf("ERROR: trying to open %s:%u %s\n", ip, port, strerror(errno));
         }else if(fd == -2){
 
         }else{
-            printf("Unknown error trying to open %c:%u\n", ip, port);
+            printf("Unknown error trying to open %s:%u\n", ip, port);
         }
     }
 }
@@ -232,8 +232,6 @@ bool is_unregistrered(RequestHeader_t* data){
 }
 
 void register_peer(int fd, RequestHeader_t* data){
-    printf("Registre peer\n");
-
     //consgtruct answer
 
     if(is_unregistrered(data)){
