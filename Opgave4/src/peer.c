@@ -156,38 +156,71 @@ void respond(int fd, u_int32_t status, void* data, size_t bytes){
     compsys_helper_writen(fd, &header, sizeof(header));
 }
 
+void send_to_client(char* message, size_t message_len, char ip[IP_LEN], uint32_t port){
+    char c_port[5];
+    sprintf(c_port, "%u", port);
+    c_port[5] = '\0';
+
+    int fd = compsys_helper_open_clientfd(ip, c_port);
+    if(fd >= 0){
+        ssize_t write = compsys_helper_writen(fd, message, message_len);
+        if(write < 0){
+            printf("ERROR: trying to write to %c:%u\n", ip, port);
+        }
+    }else{
+        if(fd == -1){
+            printf("ERROR: trying to open %c:%u %s\n", ip, port, strerror(errno));
+        }else if(fd == -2){
+
+        }else{
+            printf("Unknown error trying to open %c:%u\n", ip, port);
+        }
+    }
+}
+
 void add_header(char* message, uint32_t payload_length){
-        char port[5];
-
         memcpy(message, my_address->ip, IP_LEN);
-
-        sprintf(port, "%u", my_address->port);
-        port[5] = '\0';
-        memcpy(message + IP_LEN, port, PORT_LEN);
+        memcpy(message + IP_LEN, &my_address->port, PORT_LEN);
         memcpy(message + (IP_LEN + PORT_LEN), my_address->signature, SHA256_HASH_SIZE);
 
         uint32_t cmd = htobe32(COMMAND_INFORM);
-        sprintf(message + (IP_LEN + PORT_LEN + SHA256_HASH_SIZE), "%u", cmd);
+        memcpy(message + (IP_LEN + PORT_LEN + SHA256_HASH_SIZE), &cmd, sizeof(uint32_t));
         uint32_t addr_len = htobe32(payload_length);
-        sprintf(message + (IP_LEN + PORT_LEN + SHA256_HASH_SIZE + sizeof(uint32_t)), "%u", addr_len);
+        memcpy(message + (IP_LEN + PORT_LEN + SHA256_HASH_SIZE + sizeof(uint32_t)), &addr_len, sizeof(uint32_t));
+}
+
+void inform_old_peers(uint32_t i){
+    size_t message_len = REQUEST_HEADER_LEN + PEER_ADDR_LEN;
+    char message[message_len];
+    add_header(&message[0], PEER_ADDR_LEN);
+
+    memcpy(message + REQUEST_HEADER_LEN, network[peer_count - 1]->ip, IP_LEN);
+    uint32_t peer_port = htobe32(network[peer_count - 1]->port);
+    memcpy(message + (REQUEST_HEADER_LEN + IP_LEN), &peer_port, PORT_LEN);
+    memcpy(message + (REQUEST_HEADER_LEN + IP_LEN + PORT_LEN), my_address->signature, SHA256_HASH_SIZE);
+    memcpy(message + (REQUEST_HEADER_LEN + IP_LEN + PORT_LEN + SHA256_HASH_SIZE), my_address->salt, SALT_LEN);
+        
+    send_to_client(message, message_len, network[i]->ip, network[i]->port);
+}
+
+void inform_new_peer(uint32_t i){
+    size_t message_len = REQUEST_HEADER_LEN + PEER_ADDR_LEN;
+    char message[message_len];
+    add_header(&message[0], PEER_ADDR_LEN);
+
+    memcpy(message + REQUEST_HEADER_LEN, network[i]->ip, IP_LEN);
+    uint32_t peer_port = htobe32(network[i]->port);
+    memcpy(message + (REQUEST_HEADER_LEN + IP_LEN), &peer_port, PORT_LEN);
+    memcpy(message + (REQUEST_HEADER_LEN + IP_LEN + PORT_LEN), my_address->signature, SHA256_HASH_SIZE);
+    memcpy(message + (REQUEST_HEADER_LEN + IP_LEN + PORT_LEN + SHA256_HASH_SIZE), my_address->salt, SALT_LEN);
+
+    send_to_client(message, message_len, network[peer_count - 1]->ip, network[peer_count - 1]->port);
 }
 
 void send_inform(){
     for(uint32_t i = 0; i < peer_count - 1; i++){
-        size_t message_len = sizeof(RequestHeader_t) + PEER_ADDR_LEN;
-        char message[message_len];
-        add_header(&message[0], PEER_ADDR_LEN);
-
-        memcpy(message + (IP_LEN + PORT_LEN + SHA256_HASH_SIZE + sizeof(uint32_t) + sizeof(uint32_t)), network[peer_count - 1]->ip, IP_LEN);
-        sprintf(message + (IP_LEN + PORT_LEN + SHA256_HASH_SIZE + sizeof(uint32_t) + sizeof(uint32_t) + IP_LEN), "%u", network[peer_count - 1]->port);
-        memcpy(message + (IP_LEN + PORT_LEN + SHA256_HASH_SIZE + sizeof(uint32_t) + sizeof(uint32_t) + IP_LEN + PORT_LEN), my_address->signature, SHA256_HASH_SIZE);
-        memcpy(message + (IP_LEN + PORT_LEN + SHA256_HASH_SIZE + sizeof(uint32_t) + sizeof(uint32_t) + IP_LEN + PORT_LEN + SHA256_HASH_SIZE), my_address->salt, SALT_LEN);
-        
-        char port[5];
-        sprintf(port, "%u", network[i]->port);
-        port[5] = '\0';
-
-        compsys_helper_writen(compsys_helper_open_clientfd(network[i]->ip, port), message, message_len);
+        inform_old_peers(i);
+        inform_new_peer(i);
     }
 }
 
