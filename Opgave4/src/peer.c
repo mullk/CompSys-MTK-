@@ -293,8 +293,7 @@ void register_peer(int fd, RequestHeader_t* data){
     send_inform();
 }
 
-void inform(){
-    printf("inform\n");
+void inform(int fd, RequestHeader_t* data){
     assert(0);
 }
 
@@ -340,6 +339,10 @@ void* server_thread(){
             header.port = be32toh(header.port);
             header.command = be32toh(header.command);
 
+            if(!is_valid_ip(header.ip) || !is_valid_port(header.port)){
+                respond(client_fd, STATUS_MALFORMED, NULL, 0);
+            }
+
             if(bytes == -1){
                 if(errno == EBADF){
                     break;
@@ -355,7 +358,7 @@ void* server_thread(){
                 register_peer(client_fd, &header);
                 break;
             case COMMAND_INFORM:
-                inform();
+                inform(client_fd, &header);
                 break;
             case COMMAND_RETREIVE:
                 retrive();
