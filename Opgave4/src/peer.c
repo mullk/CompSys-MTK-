@@ -144,16 +144,56 @@ char peer_ip[IP_LEN];
 
 
 
+bool is_equal(hashdata_t first, hashdata_t second){
+    for(int i = 0; i < SHA256_HASH_SIZE; i++){
+        if(first[i] != second[i]){
+            return false;
+        }
+    }
+    return true;
+}
 
+void respond(int fd, uint32_t status, char* data, size_t bytes){
+    uint32_t blocks = ceil((float) bytes / (float) MAX_MSG_LEN);
+    hashdata_t total_hash;
+    get_data_sha(data, total_hash, bytes, SHA256_HASH_SIZE);
+    for(uint32_t i = 0; i < blocks; i++){
+        size_t this_length = MAX_MSG_LEN - REPLY_HEADER_LEN;
+        if(i == blocks - 1){
+            this_length = bytes - MAX_MSG_LEN * (blocks - 1);
+        }
 
-void respond(int fd, u_int32_t status, void* data, size_t bytes){
-    ReplyHeader_t header;
-    header.length = htobe32(bytes);
-    header.status = htobe32(status);
-    header.this_block = 0;
-    header.block_count = 1;
+        char message[REPLY_HEADER_LEN + this_length];
 
-    compsys_helper_writen(fd, &header, sizeof(header));
+        uint32_t mess_length = htobe32(REPLY_HEADER_LEN + this_length);
+        uint32_t mess_status = htobe32(status);
+        uint32_t current_block = htobe32(i);
+        uint32_t max_blocks = htobe32(blocks);
+
+        size_t size = sizeof(uint32_t);
+
+        memcpy(message, &mess_length, sizeof(uint32_t));
+        memcpy(message + (size), &mess_status, sizeof(uint32_t));
+        size += sizeof(uint32_t);
+        memcpy(message + size, &current_block, sizeof(uint32_t));
+        size += sizeof(uint32_t);
+        memcpy(message + size, &max_blocks, sizeof(uint32_t));
+        size += sizeof(uint32_t);
+        hashdata_t block_hash;
+        get_data_sha(&data[i * MAX_MSG_LEN], block_hash, this_length, SHA256_HASH_SIZE);
+
+        memcpy(message + size, &block_hash, SHA256_HASH_SIZE);
+        size += SHA256_HASH_SIZE;
+
+        memcpy(message + size, &total_hash, SHA256_HASH_SIZE);
+        
+        memcpy(message + REPLY_HEADER_LEN, data + (i * MAX_MSG_LEN), this_length);
+
+        ssize_t writen = compsys_helper_writen(fd, message, this_length + REPLY_HEADER_LEN);
+        if(writen < 0){
+            printf("ERROR: trying to write %s\n", strerror(errno));
+        }
+    }
 }
 
 void send_to_client(char* message, size_t message_len, char ip[IP_LEN], uint32_t port){
@@ -189,38 +229,19 @@ void add_header(char* message, uint32_t payload_length){
         memcpy(message + (IP_LEN + PORT_LEN + SHA256_HASH_SIZE + sizeof(uint32_t)), &addr_len, sizeof(uint32_t));
 }
 
-void inform_old_peers(uint32_t i){
-    size_t message_len = REQUEST_HEADER_LEN + PEER_ADDR_LEN;
-    char message[message_len];
-    add_header(&message[0], PEER_ADDR_LEN);
-
-    memcpy(message + REQUEST_HEADER_LEN, network[peer_count - 1]->ip, IP_LEN);
-    uint32_t peer_port = htobe32(network[peer_count - 1]->port);
-    memcpy(message + (REQUEST_HEADER_LEN + IP_LEN), &peer_port, PORT_LEN);
-    memcpy(message + (REQUEST_HEADER_LEN + IP_LEN + PORT_LEN), my_address->signature, SHA256_HASH_SIZE);
-    memcpy(message + (REQUEST_HEADER_LEN + IP_LEN + PORT_LEN + SHA256_HASH_SIZE), my_address->salt, SALT_LEN);
-        
-    send_to_client(message, message_len, network[i]->ip, network[i]->port);
-}
-
-void inform_new_peer(uint32_t i){
-    size_t message_len = REQUEST_HEADER_LEN + PEER_ADDR_LEN;
-    char message[message_len];
-    add_header(&message[0], PEER_ADDR_LEN);
-
-    memcpy(message + REQUEST_HEADER_LEN, network[i]->ip, IP_LEN);
-    uint32_t peer_port = htobe32(network[i]->port);
-    memcpy(message + (REQUEST_HEADER_LEN + IP_LEN), &peer_port, PORT_LEN);
-    memcpy(message + (REQUEST_HEADER_LEN + IP_LEN + PORT_LEN), my_address->signature, SHA256_HASH_SIZE);
-    memcpy(message + (REQUEST_HEADER_LEN + IP_LEN + PORT_LEN + SHA256_HASH_SIZE), my_address->salt, SALT_LEN);
-
-    send_to_client(message, message_len, network[peer_count - 1]->ip, network[peer_count - 1]->port);
-}
-
 void send_inform(){
     for(uint32_t i = 0; i < peer_count - 1; i++){
-        inform_old_peers(i);
-        inform_new_peer(i);
+        size_t message_len = REQUEST_HEADER_LEN + PEER_ADDR_LEN;
+        char message[message_len];
+        add_header(&message[0], PEER_ADDR_LEN);
+
+        memcpy(message + REQUEST_HEADER_LEN, network[peer_count - 1]->ip, IP_LEN);
+        uint32_t peer_port = htobe32(network[peer_count - 1]->port);
+        memcpy(message + (REQUEST_HEADER_LEN + IP_LEN), &peer_port, PORT_LEN);
+        memcpy(message + (REQUEST_HEADER_LEN + IP_LEN + PORT_LEN), my_address->signature, SHA256_HASH_SIZE);
+        memcpy(message + (REQUEST_HEADER_LEN + IP_LEN + PORT_LEN + SHA256_HASH_SIZE), my_address->salt, SALT_LEN);
+        
+        send_to_client(message, message_len, network[i]->ip, network[i]->port);
     }
 }
 
@@ -232,10 +253,25 @@ bool is_unregistrered(RequestHeader_t* data){
 }
 
 void register_peer(int fd, RequestHeader_t* data){
-    //consgtruct answer
-
     if(is_unregistrered(data)){
-        respond(fd, STATUS_OK, NULL, 0);
+        char data[PEER_ADDR_LEN * (peer_count + 1)];
+        
+        memcpy(data, my_address->ip, IP_LEN);
+        uint32_t peer_port = htobe32(my_address->port);
+        memcpy(data + (IP_LEN), &peer_port, PORT_LEN);
+        memcpy(data + (IP_LEN + PORT_LEN), my_address->signature, SHA256_HASH_SIZE);
+        memcpy(data + (IP_LEN + PORT_LEN + SHA256_HASH_SIZE), my_address->salt, SALT_LEN);
+
+        for(uint32_t i = 0; i < peer_count; i++){
+            memcpy(data + (PEER_ADDR_LEN * (i + 1)), network[i]->ip, IP_LEN);
+            uint32_t peer_port = htobe32(network[peer_count - 1]->port);
+            memcpy(data + (PEER_ADDR_LEN * (i + 1) + IP_LEN), &peer_port, PORT_LEN);
+            memcpy(data + (PEER_ADDR_LEN * (i + 1) + IP_LEN + PORT_LEN), my_address->signature, SHA256_HASH_SIZE);
+            memcpy(data + (PEER_ADDR_LEN * (i + 1) + IP_LEN + PORT_LEN + SHA256_HASH_SIZE), my_address->salt, SALT_LEN);
+        }
+        
+
+        respond(fd, STATUS_OK, data, PEER_ADDR_LEN * (peer_count + 1));
     }else{
         respond(fd, STATUS_PEER_EXISTS, NULL, 0);
         return;
