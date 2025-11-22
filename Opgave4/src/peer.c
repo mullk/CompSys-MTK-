@@ -267,8 +267,8 @@ bool is_unregistrered(RequestHeader_t* data){
     return true;
 }
 
-void register_peer(int fd, RequestHeader_t* data){
-    if(is_unregistrered(data)){
+void register_peer(int fd, RequestHeader_t* header){
+    if(is_unregistrered(header)){
         char data[PEER_ADDR_LEN * (peer_count + 1)];
         
         memcpy(data, my_address->ip, IP_LEN);
@@ -298,10 +298,10 @@ void register_peer(int fd, RequestHeader_t* data){
     }
     network[peer_count] = malloc(sizeof(NetworkAddress_t));
 
-    memcpy(network[peer_count]->ip, data->ip, IP_LEN);
-    network[peer_count]->port = data->port;
-    memcpy(network[peer_count]->signature, data->signature, SHA256_HASH_SIZE);
-    //network[peer_count]->salt = data.
+    memcpy(network[peer_count]->ip, header->ip, IP_LEN);
+    network[peer_count]->port = header->port;
+    memcpy(network[peer_count]->signature, header->signature, SHA256_HASH_SIZE);
+    //network[peer_count]->salt = header.
 
     peer_count++;
 
