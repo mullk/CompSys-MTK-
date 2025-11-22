@@ -317,7 +317,7 @@ void inform(int fd, RequestHeader_t* data){
     assert(0);
 }
 
-#include <unistd.h>
+
 
 void retrive(int fd, RequestHeader_t* data){
     char file_path[be32toh(data->length) + 1];
