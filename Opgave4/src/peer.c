@@ -329,6 +329,7 @@ void retrive(int fd, RequestHeader_t* data){
         return;
     }
 
+    //The following file read code is copied from A0 as handed in by DHV501
     //Create initial read buffer
     int bufferSize = 128;
     char* buffer = malloc(bufferSize);
@@ -354,6 +355,7 @@ void retrive(int fd, RequestHeader_t* data){
     }
 
     respond(fd, STATUS_OK, buffer, currentBufferIndex);
+    free(buffer);
 }
 
 /*
