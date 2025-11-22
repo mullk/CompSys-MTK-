@@ -153,46 +153,61 @@ bool is_equal(hashdata_t first, hashdata_t second){
     return true;
 }
 
+void add_response_header(char* message, size_t block_length, uint32_t status, uint32_t current_block, uint32_t blocks, hashdata_t* total_hash, hashdata_t* block_hash){
+    uint32_t mess_length = htobe32(REPLY_HEADER_LEN + block_length);
+    uint32_t mess_status = htobe32(status);
+    uint32_t net_current_block = htobe32(current_block);
+    uint32_t max_blocks = htobe32(blocks);
+
+    memcpy(message, &mess_length, sizeof(uint32_t));
+    memcpy(message + (sizeof(uint32_t) * 1), &mess_status, sizeof(uint32_t));
+    memcpy(message + (sizeof(uint32_t) * 2), &net_current_block, sizeof(uint32_t));
+    memcpy(message + (sizeof(uint32_t) * 3), &max_blocks, sizeof(uint32_t));
+    if(block_hash == 0){
+        memset(message + (sizeof(uint32_t) * 4), 0, SHA256_HASH_SIZE);
+    }else{
+        memcpy(message + (sizeof(uint32_t) * 4), block_hash, SHA256_HASH_SIZE);
+    }
+    if(total_hash == 0){
+        memset(message + (sizeof(uint32_t) * 4) + SHA256_HASH_SIZE, 0, SHA256_HASH_SIZE);
+    }else{
+        memcpy(message + (sizeof(uint32_t) * 4) + SHA256_HASH_SIZE, total_hash, SHA256_HASH_SIZE);
+    }
+        
+}
+
 void respond(int fd, uint32_t status, char* data, size_t bytes){
     uint32_t blocks = ceil((float) bytes / (float) MAX_MSG_LEN);
     hashdata_t total_hash;
     get_data_sha(data, total_hash, bytes, SHA256_HASH_SIZE);
+
+    if(bytes == 0){
+        char message[REPLY_HEADER_LEN];
+        add_response_header(message, 0, status, 0, 1, 0, 0);
+    }
+    size_t bytes_send = 0;
     for(uint32_t i = 0; i < blocks; i++){
         size_t this_length = MAX_MSG_LEN - REPLY_HEADER_LEN;
         if(i == blocks - 1){
-            this_length = bytes - MAX_MSG_LEN * (blocks - 1);
+            this_length = bytes - bytes_send;
         }
 
         char message[REPLY_HEADER_LEN + this_length];
 
-        uint32_t mess_length = htobe32(REPLY_HEADER_LEN + this_length);
-        uint32_t mess_status = htobe32(status);
-        uint32_t current_block = htobe32(i);
-        uint32_t max_blocks = htobe32(blocks);
-
-        size_t size = sizeof(uint32_t);
-
-        memcpy(message, &mess_length, sizeof(uint32_t));
-        memcpy(message + (size), &mess_status, sizeof(uint32_t));
-        size += sizeof(uint32_t);
-        memcpy(message + size, &current_block, sizeof(uint32_t));
-        size += sizeof(uint32_t);
-        memcpy(message + size, &max_blocks, sizeof(uint32_t));
-        size += sizeof(uint32_t);
         hashdata_t block_hash;
-        get_data_sha(&data[i * MAX_MSG_LEN], block_hash, this_length, SHA256_HASH_SIZE);
+        get_data_sha(&data[bytes_send], block_hash, this_length, SHA256_HASH_SIZE);
 
-        memcpy(message + size, &block_hash, SHA256_HASH_SIZE);
-        size += SHA256_HASH_SIZE;
+        add_response_header(message, this_length, status, i, blocks, &total_hash, &block_hash);
 
-        memcpy(message + size, &total_hash, SHA256_HASH_SIZE);
-        
-        memcpy(message + REPLY_HEADER_LEN, data + (i * MAX_MSG_LEN), this_length);
+        memcpy(message + REPLY_HEADER_LEN, data + bytes_send, this_length);
 
         ssize_t writen = compsys_helper_writen(fd, message, this_length + REPLY_HEADER_LEN);
         if(writen < 0){
             printf("ERROR: trying to write %s\n", strerror(errno));
+            return;
         }
+        assert(writen == (ssize_t)(this_length + REPLY_HEADER_LEN));
+        bytes_send += this_length;
     }
 }
 
@@ -218,7 +233,7 @@ void send_to_client(char* message, size_t message_len, char ip[IP_LEN], uint32_t
     }
 }
 
-void add_header(char* message, uint32_t payload_length){
+void add_request_header(char* message, uint32_t payload_length){
         memcpy(message, my_address->ip, IP_LEN);
         memcpy(message + IP_LEN, &my_address->port, PORT_LEN);
         memcpy(message + (IP_LEN + PORT_LEN), my_address->signature, SHA256_HASH_SIZE);
@@ -233,7 +248,7 @@ void send_inform(){
     for(uint32_t i = 0; i < peer_count - 1; i++){
         size_t message_len = REQUEST_HEADER_LEN + PEER_ADDR_LEN;
         char message[message_len];
-        add_header(&message[0], PEER_ADDR_LEN);
+        add_request_header(&message[0], PEER_ADDR_LEN);
 
         memcpy(message + REQUEST_HEADER_LEN, network[peer_count - 1]->ip, IP_LEN);
         uint32_t peer_port = htobe32(network[peer_count - 1]->port);
@@ -297,9 +312,48 @@ void inform(int fd, RequestHeader_t* data){
     assert(0);
 }
 
-void retrive(){
-    printf("retrive\n");
-    assert(0);
+#include <unistd.h>
+
+void retrive(int fd, RequestHeader_t* data){
+    char file_path[be32toh(data->length) + 1];
+    ssize_t bytes = compsys_helper_readn(fd, file_path, be32toh(data->length));
+    if(bytes == -1){
+        printf("ERROR: %s\n", strerror(errno));
+    }
+
+    file_path[be32toh(data->length)] = 0;
+
+    FILE* file = fopen(file_path, "r");
+    if(file == NULL){
+        respond(fd, STATUS_BAD_REQUEST, NULL, 0);
+        return;
+    }
+
+    //Create initial read buffer
+    int bufferSize = 128;
+    char* buffer = malloc(bufferSize);
+
+    int currentBufferIndex = 0;
+    while(true){
+        char c = fgetc(file);
+        if(c != EOF){
+            //if  the current read buffer is full reallocate at twice the current size.
+            if(currentBufferIndex == bufferSize){
+                char* newBuffer = malloc(bufferSize * 2);
+                memcpy(newBuffer, buffer, bufferSize);
+                free(buffer);
+                buffer = newBuffer;
+                bufferSize *= 2;
+            }
+            //place current byte into the read buffer and increment the index.
+            *(buffer + currentBufferIndex) = c;
+            currentBufferIndex++;
+        }else{
+            break;
+        }
+    }
+
+    respond(fd, STATUS_OK, buffer, currentBufferIndex);
 }
 
 /*
@@ -361,7 +415,7 @@ void* server_thread(){
                 inform(client_fd, &header);
                 break;
             case COMMAND_RETREIVE:
-                retrive();
+                retrive(client_fd, &header);
                 break;
             default:
                 printf("ERROR: unkown command %u\n", header.command);
