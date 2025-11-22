@@ -184,6 +184,11 @@ void respond(int fd, uint32_t status, char* data, size_t bytes){
     if(bytes == 0){
         char message[REPLY_HEADER_LEN];
         add_response_header(message, 0, status, 0, 1, 0, 0);
+        ssize_t writen = compsys_helper_writen(fd, message, REPLY_HEADER_LEN);
+        if(writen < 0){
+            printf("ERROR: trying to write %s\n", strerror(errno));
+        }
+        return;
     }
     size_t bytes_send = 0;
     for(uint32_t i = 0; i < blocks; i++){
