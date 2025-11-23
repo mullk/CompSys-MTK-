@@ -869,7 +869,7 @@ bool is_equal(hashdata_t first, hashdata_t second){
 }
 
 void add_response_header(char* message, size_t block_length, uint32_t status, uint32_t current_block, uint32_t blocks, hashdata_t* total_hash, hashdata_t* block_hash){
-    uint32_t mess_length = htobe32(REPLY_HEADER_LEN + block_length);
+    uint32_t mess_length = htobe32(block_length);
     uint32_t mess_status = htobe32(status);
     uint32_t net_current_block = htobe32(current_block);
     uint32_t max_blocks = htobe32(blocks);
@@ -1011,19 +1011,10 @@ void register_peer(int fd, RequestHeader_t* header){
         respond(fd, STATUS_PEER_EXISTS, NULL, 0);
         return;
     }
-    if(network != NULL){
-        network = realloc(network, sizeof(NetworkAddress_t*) * peer_count);
-    }else{
-        network = malloc(sizeof(NetworkAddress_t*));
-    }
-    network[peer_count] = malloc(sizeof(NetworkAddress_t));
-
-    memcpy(network[peer_count]->ip, header->ip, IP_LEN);
-    network[peer_count]->port = header->port;
-    memcpy(network[peer_count]->signature, header->signature, SHA256_HASH_SIZE);
-    //network[peer_count]->salt = header.
-
-    peer_count++;
+    
+    //Salt should be random.
+    char salt[SALT_LEN+2] = "0123456789ABCDEF\0";
+    add_peer_to_network(header->ip, header->port, header->signature, salt);
 
     send_inform();
 }
@@ -1099,51 +1090,48 @@ void* server_thread(){
        if(fd == -1) printf("ERROR: %s\n", strerror(errno));
     while(true){
         int client_fd = accept(fd, NULL, NULL);
-        //TODO: handle error.
-        while(true){
-            compsys_helper_state_t state;
-            compsys_helper_readinitb(&state, client_fd);
-            RequestHeader_t header;
-            ssize_t bytes = compsys_helper_readn(client_fd, &header, sizeof(header));
+        compsys_helper_state_t state;
+        compsys_helper_readinitb(&state, client_fd);
+        
+        RequestHeader_t header;
+        ssize_t bytes = compsys_helper_readn(client_fd, &header, REQUEST_HEADER_LEN);
 
-            header.port = be32toh(header.port);
-            header.command = be32toh(header.command);
+        header.port = be32toh(header.port);
+        header.command = be32toh(header.command);
 
-            if(!is_valid_ip(header.ip) || !is_valid_port(header.port)){
-                respond(client_fd, STATUS_MALFORMED, NULL, 0);
-            }
-
-            if(bytes == -1){
-                if(errno == EBADF){
-                    break;
-                }else{
-                    printf("ERROR: %s\n", strerror(errno));
-                }
-            }else if(bytes == 0){
-                break; //Connection closed.
-            }
-            switch (header.command)
-            {
-            case COMMAND_REGISTER:
-                register_peer(client_fd, &header);
-                break;
-            case COMMAND_INFORM:{
-                char body[header.length];
-                compsys_helper_readn(client_fd, body, header.length);
-                handle_inform(client_fd, &header, body);
-                break;
-            }
-            case COMMAND_RETREIVE:
-                retrive(client_fd, &header);
-                break;
-            default:
-                printf("ERROR: unkown command %u\n", header.command);
-                respond(client_fd, STATUS_MALFORMED, NULL, 0);
-                break;
-            }
-            close(client_fd);
-
+        if(!is_valid_ip(header.ip) || !is_valid_port(header.port)){
+            respond(client_fd, STATUS_MALFORMED, NULL, 0);
         }
+
+        if(bytes == -1){
+            if(errno == EBADF){
+                break;
+            }else{
+                printf("ERROR: %s\n", strerror(errno));
+            }
+        }else if(bytes == 0){
+            break; //Connection closed.
+        }
+        switch (header.command)
+        {
+        case COMMAND_REGISTER:
+            register_peer(client_fd, &header);
+            break;
+        case COMMAND_INFORM:{
+            char body[header.length];
+            compsys_helper_readn(client_fd, body, header.length);
+            handle_inform(client_fd, &header, body);
+            break;
+        }
+        case COMMAND_RETREIVE:
+            retrive(client_fd, &header);
+            break;
+        default:
+            printf("ERROR: unkown command %u\n", header.command);
+            respond(client_fd, STATUS_MALFORMED, NULL, 0);
+            break;
+        }
+        close(client_fd);
     }
     return NULL;
 }
