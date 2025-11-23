@@ -1118,8 +1118,8 @@ void* server_thread(){
             register_peer(client_fd, &header);
             break;
         case COMMAND_INFORM:{
-            char body[header.length];
-            compsys_helper_readn(client_fd, body, header.length);
+            char body[be32toh(header.length)];
+            compsys_helper_readn(client_fd, body, be32toh(header.length));
             handle_inform(client_fd, &header, body);
             break;
         }
