@@ -1,13 +1,11 @@
 #include <stdlib.h>
 #include <stdio.h>
-#include <math.h>
-#include <netdb.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
 #include <string.h>
-#include <time.h>
-
 #include <stdbool.h>
+#include <pthread.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <errno.h>
 
 #ifdef __APPLE__
 #include "./endian.h"
@@ -15,134 +13,851 @@
 #include <endian.h>
 #endif
 
-#include "./peer.h"
+#include "peer.h"
+#include "common.h"
 
+#include <math.h>
 
-// Denne peger på vores egen peer altså os selv i netværket.
-// NetworkAddress_t er en struktur (defineret i peer.h)
-// Den bruges til at gemme vores IP, vores portnummer, og vores salt (for signaturen).
-NetworkAddress_t *my_address;
+// Globale værdier
 
-
-
-
-// Liste over peers i netværket. Det er en pointer til et array af 
-// pointers, hvor hver peger på en anden NetworkAddress_t
-// Hver entry i network repræsenterer en anden peer på netværket (IP + port + salt).
-// I starten sættes den til NULL, fordi vi endnu ikke kender nogen andre peers.
-// Når noget registrerer sig, får vi en liste over peers fra den 
-// som vi forbinder os til, og så allokerer vi plads
-NetworkAddress_t** network = NULL;
-
-
-
-
-// Antal peers i netværket. Starter ved 0, fordi vi endnu ikke kender 
-// nogen andre peers. Når vi fjerner en peer (f.eks. timeout), bliver den mindre.
+NetworkAddress_t *my_address = NULL;
+NetworkAddress_t **network = NULL;
 uint32_t peer_count = 0;
 
+pthread_mutex_t network_mutex = PTHREAD_MUTEX_INITIALIZER;
 bool run = true;
 
-/*
- * De snakker om hele    void* client_thread()      funktionen:
- * Function to act as thread for all required client interactions. This thread 
- * will be run concurrently with the server_thread. It will start by requesting
- * the IP and port for another peer to connect to. Once both have been provided
- * the thread will register with that peer and expect a response outlining the
- * complete network. The user will then be prompted to provide a file path to
- * retrieve. This file request will be sent to a random peer on the network.
- * This request/retrieve interaction is then repeated forever.
- */ 
+void respond(int fd, uint32_t status, char* data, size_t bytes);
 
-// void* bruges fordi pthread_create() kræver den signatur:
-void* client_thread()
+
+void compute_signature(const char *password, const char *salt, hashdata_t out)
 {
+    // Buffer der indeholder:  [password | salt]
+    // Bemærk: PASSWORD_LEN og SALT_LEN er faste størrelser.
+    char buf[PASSWORD_LEN + SALT_LEN];
 
+    // Kopiér hele adgangskoden ind først.
+    // Her går vi ud fra, at adgangskoden altid fylder PASSWORD_LEN bytes
+    // (A3 specifikationen kræver faste størrelser).
+    memcpy(buf, password, PASSWORD_LEN);
 
+    // Læg saltet lige efter password i bufferen.
+    memcpy(buf + PASSWORD_LEN, salt, SALT_LEN);
 
-
-
-// peer_ip er en lokal buffer til at gemme den IP-adresse brugeren indtaster.
-// fprintf(stdout, ...) printer beskeden på skærmen.
-// scanf("%16s", peer_ip); læser en streng fra tastaturet (maks. 16 tegn).
-// %16s beskytter mod buffer overflow, så der aldrig skrives mere end 16 bytes ind.
-
-char peer_ip[IP_LEN];
-    fprintf(stdout, "Enter peer IP to connect to: ");
-    scanf("%16s", peer_ip);
-
-
-
-
-
-
-// Dette fylder resten af arrayet med null-tegn ('\0').
-// Det sikrer, at der ikke ligger “gamle” eller tilfældige tegn i bufferen.
-// Det gør output mere stabilt, når du senere kopierer den videre med memcpy().
-
-    for (int i=strlen(peer_ip); i<IP_LEN; i++)
-    {
-        peer_ip[i] = '\0';
-    }
-
-
-
-
-// Samme idé som før — bare for portnummeret.
-// Brugeren skriver fx:
-// Enter peer port to connect to: 5000
-
-    char peer_port[PORT_STR_LEN];
-    fprintf(stdout, "Enter peer port to connect to: ");
-    scanf("%16s", peer_port);
-
-
-    
-
-// Samme oprydning som for IP’en.
-    // Clean up password string as otherwise some extra chars can sneak in.
-    for (int i=strlen(peer_port); i<PORT_STR_LEN; i++)
-    {
-        peer_port[i] = '\0';
-    }
-
-
-
-
-
-
-// Her oprettes en NetworkAddress_t-struktur lokalt, hvor du:
-// kopierer IP-adressen fra peer_ip over i peer_address.ip
-// konverterer port-strengen til et tal (atoi = ASCII to integer)
-// ideen er at vi skriver noget som 127.0.0.1 5000 i terminalen også
-// og så gemmer vi det i peer_address strukturen som:
-
-// peer_address.ip   = "127.0.0.1"
-// peer_address.port = 5000
-
-    NetworkAddress_t peer_address;
-    memcpy(peer_address.ip, peer_ip, IP_LEN);
-    peer_address.port = atoi(peer_port);
-
-
-
-// Her slutter tråden — lige nu laver den intet efter inputtet.
-// Men senere i opgaven skal vi have implementeret
-
-// Mulighed for at oprette en socket
-// at forbinde (connect()) til peer_address
-// at der bliver mulighed for at sende en registreringsbesked
-// at modtage svaret (netværkslisten)
-
-
-    // You should never see this printed in your finished implementation
-    printf("Client thread done\n");
-
-    return NULL;
+    // Hash hele (password || salt) i ét SHA-256 kald.
+    // Resultatet skrives ud i 'out' (32 bytes).
+    get_data_sha(buf, out, PASSWORD_LEN + SALT_LEN, SHA256_HASH_SIZE);
 }
 
 
 
+
+
+
+
+
+// Udskriver en liste over alle kendte peers i netværket.
+// Funktionen låser netværks-listen for at undgå race conditions,
+// så ingen anden tråd ændrer peer_count eller network[] mens der printes.
+void print_network()
+{
+    // Sikrer eksklusiv adgang til network[] og peer_count
+    pthread_mutex_lock(&network_mutex);
+
+    // Print header med antal kendte peers
+    printf("\n--- NETWORK (%u peers) ---\n", peer_count);
+
+    // Gennemløber alle kendte peers og viser IP og port
+    for (uint32_t i = 0; i < peer_count; i++) {
+        printf("%u) %s:%u\n", i,
+               network[i]->ip,
+               network[i]->port);
+    }
+
+    printf("--------------------------\n");
+
+    // Frigiv låsen så andre tråde kan opdatere netværkslisten igen
+    pthread_mutex_unlock(&network_mutex);
+}
+
+
+
+
+
+// Finder en peer i min lokale netværksliste.
+// Jeg leder efter en IP + port som matcher en af dem jeg allerede har gemt.
+// Hvis jeg finder den -> returnerer dens index i network[].
+// Hvis ikke -> return -1 (det bruger jeg som "peer findes ikke").
+int find_peer(const char *ip, uint32_t port)
+{
+    // Går igennem alle peers jeg kender
+    for (uint32_t i = 0; i < peer_count; i++) {
+
+        // Tjekker om både IP og port matcher nøjagtigt
+        // (IP er en streng, derfor strcmp; port er bare et tal)
+        if (strcmp(network[i]->ip, ip) == 0 &&
+            network[i]->port == port)
+        {
+            return i;   // Fandt peer -> giver index tilbage
+        }
+    }
+
+    // Kommer jeg hertil, så fandt jeg ingen match
+    return -1;
+}
+
+
+
+
+
+
+// Tjekker om afsenderens signature faktisk matcher det,
+// jeg har gemt for den peer i min netværksliste.
+// Hele pointen er at sikre, at en peer ikke bare kan udgive sig
+// for at være en anden ved at sende samme IP/port.
+// Hvis signaturen ikke passer -> så er der noget suspekt.
+bool validate_signature(RequestHeader_t *hdr)
+{
+    // Først finder jeg peerens index i min lokale network[] liste.
+    // Hvis den ikke er der -> så giver det ingen mening at tjekke signatur.
+    int idx = find_peer(hdr->ip, hdr->port);
+    if (idx < 0) return false;  // kender ikke peer -> validation fail
+
+    // Nu sammenligner jeg den signatur, peer sender med den jeg har gemt.
+    // Da begge er SHA256-hashes, kan jeg bare lave en direkte byte-compare.
+    // Hvis alle 32 bytes er ens -> valid signature.
+    return memcmp(hdr->signature,
+                  network[idx]->signature,
+                  SHA256_HASH_SIZE) == 0;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+// Tilføjer en peer til mit lokale netværk.
+// Funktionens job er basically:
+//  1) Tjek om peer allerede findes (samme IP + port)
+//       -> i så fald bare opdater signature + salt
+//  2) Hvis peer er ny -> allokér plads og tilføj den til network[]
+// Returnerer:
+//      0 = peer eksisterede allerede
+//      1 = peer var ny og blev tilføjet
+int add_peer_to_network(const char *ip, uint32_t port,
+                               const hashdata_t signature,
+                               const char *salt)
+{
+    // Låser netværks-listen så der ikke er race-cond
+    // (servertråde kan ellers opdatere listen samtidig)
+    pthread_mutex_lock(&network_mutex);
+
+    // Først tjekker jeg om vi allerede kender peer'en.
+    // Det gør jeg ved at lede efter en entry med samme IP + port.
+    for (uint32_t i = 0; i < peer_count; i++) {
+
+        if (strcmp(network[i]->ip, ip) == 0 &&
+            network[i]->port == port) {
+
+            // Hvis vi allerede kender peer'en, så skal vi IKKE ignorere den.
+            // A3-protokollen kræver at vi opdaterer salt + signature ved re-announce.
+            memcpy(network[i]->signature, signature, SHA256_HASH_SIZE);
+            memcpy(network[i]->salt, salt, SALT_LEN);
+
+            // Frigiver låsen og melder “ikke ny”
+            pthread_mutex_unlock(&network_mutex);
+            return 0;
+        }
+    }
+
+    // Hvis vi når hertil, så er det en NY peer
+    // -> allokér en ekstra plads i network-listen
+    network = realloc(network, (peer_count + 1) * sizeof(NetworkAddress_t *));
+    network[peer_count] = malloc(sizeof(NetworkAddress_t));
+
+    // Gemmer alle peerens oplysninger
+    memset(network[peer_count]->ip, 0, IP_LEN);
+    memcpy(network[peer_count]->ip, ip, IP_LEN);
+
+    network[peer_count]->port = port;
+
+    memcpy(network[peer_count]->signature, signature, SHA256_HASH_SIZE);
+    memcpy(network[peer_count]->salt, salt, SALT_LEN);
+
+    // Nu har vi én peer mere
+    peer_count++;
+
+    // Done -> lås op
+    pthread_mutex_unlock(&network_mutex);
+
+    return 1;   // peer var ny
+}
+
+
+
+// Læser hele request-headeren fra socket'en.
+// Headeren har en fast størrelse (RequestHeader_t), så det er ret simpelt:
+//  1) læs præcis sizeof(RequestHeader_t) bytes
+//  2) konverter de felter der er i network byte-order -> host byte-order
+// Hvis der ikke kommer nok bytes (client disconnect osv.) -> return false.
+bool recv_request_header(int fd, RequestHeader_t *hdr)
+{
+    // compsys_helper_readn læser PRÆCIS det antal bytes vi beder om,
+    // med mindre forbindelsen dør eller der sker fejl.
+    ssize_t n = compsys_helper_readn(fd, hdr, sizeof(RequestHeader_t));
+    if (n <= 0) return false;   // fik ikke en komplet header
+
+    // De her tre felter bliver sendt som big-endian (netværksformat).
+    // Så jeg skal konvertere dem til min maskines format,
+    // ellers får jeg weird tal når jeg læser port/command/length.
+    hdr->port    = be32toh(hdr->port);
+    hdr->command = be32toh(hdr->command);
+    hdr->length  = be32toh(hdr->length);
+
+    return true;   // header blev læst korrekt
+}
+
+
+
+
+
+
+
+// Modtager selve "body"-delen af requesten.
+// Headeren har allerede fortalt mig hvor mange bytes body fylder,
+// så her skal jeg bare læse præcis 'length' bytes fra socket'en.
+// Hvis length = 0, så er der ingen body (REGISTER har fx ingen body).
+char *recv_body(int fd, uint32_t length)
+{
+    // Hvis der slet ikke er noget body, så kan jeg bare returnere NULL.
+    // (Caller skal selv håndtere "ingen body".)
+    if (length == 0) return NULL;
+
+    // Allokerer en buffer til body-dataen.
+    char *buf = malloc(length);
+
+    // compsys_helper_readn prøver at læse PRÆCIS 'length' bytes.
+    // Hvis den får < 0 eller 0 -> connection tabt, incomplete read osv.
+    if (compsys_helper_readn(fd, buf, length) <= 0) {
+        free(buf);     // husk at free hvis det fejler
+        return NULL;   // signalér at body ikke blev læst korrekt
+    }
+
+    // Alt gik godt -> returnér bufferen med data
+    return buf;
+}
+
+
+
+
+// Håndterer INFORM-beskeder.
+// INFORM betyder: “der er kommet en ny peer i netværket – opdater din liste”.
+// Det er basically det mekanisme, der holder hele netværket synkroniseret.
+// INFORM skal ALDRIG give et reply når alt er OK (A3 regel).
+void handle_inform(int fd, RequestHeader_t *hdr, const char *body)
+{
+    printf("[DEBUG] INFORM received from %s:%u  (length=%u)\n",
+           hdr->ip, hdr->port, hdr->length);
+
+    // 1) Tjek om afsenderen overhovedet findes i min netværksliste.
+    // Hvis jeg ikke kender dem -> så er det mistænkeligt (peer missing).
+    int idx = find_peer(hdr->ip, hdr->port);
+    if (idx < 0) {
+        respond(fd, STATUS_PEER_MISSING, NULL, 0);
+        return;
+    }
+
+    // 2) Tjek om signaturen fra afsenderen matcher.
+    // Hvis ikke -> de forsøger at udgive sig for en anden -> reject.
+    if (!validate_signature(hdr)) {
+        respond(fd, STATUS_BAD_PASSWORD, NULL, 0);
+        return;
+    }
+
+    // 3) Body skal være præcis én peer-entry på 68 bytes.
+    // Hvis body mangler eller har forkert størrelse -> MALFORMED.
+    if (body == NULL) {
+        respond(fd, STATUS_MALFORMED, NULL, 0);
+        return;
+    }
+    if (hdr->length != PEER_ADDR_LEN) {
+        respond(fd, STATUS_MALFORMED, NULL, 0);
+        return;
+    }
+
+    // Body-format:
+    //   ip (16)
+    //   port (4)
+    //   signature (32)
+    //   salt (16)
+    const char *ip = body;
+
+    uint32_t port;
+    memcpy(&port, body + IP_LEN, 4);
+    port = be32toh(port); // konverter port til host byte-order
+
+    printf("[DEBUG] INFORM body says: new peer = %s:%u\n", ip, port);
+
+    // henter signature og salt for den nye peer
+    const hashdata_t *sig = (const hashdata_t *)(body + IP_LEN + 4);
+    const char *salt = body + IP_LEN + 4 + SHA256_HASH_SIZE;
+
+    // 4) Tilføj peer til din liste (duplicate-safe).
+    // add_peer_to_network returnerer 0 hvis den allerede eksisterer.
+    if (!add_peer_to_network(ip, port, *sig, salt)) {
+        // Hvis det var duplicate -> det er fint.
+        // (INFORM skal ikke give nogen OK-besked tilbage)
+        return;
+    }
+
+    // Husk: INFORM har ALDRIG noget reply på success.
+    // Det er bare “opdater din liste og hold kæft bagefter”.
+}
+
+
+
+// En lille hjælperfunktion til at åbne en client-forbindelse,
+// men uden at være alt for striks omkring input-validering.
+// Jeg bruger denne i send_register(), fordi scanf nogle gange giver
+// underlige ting tilbage (newline, null-bytes osv).
+// Ideen her er at "rense" port-strengen og sikre at den faktisk er et tal.
+int open_clientfd_nocheck(const char *ip, const char *port_str) {
+    char *end = NULL;
+
+    // strtol forsøger at lave port_str om til et tal.
+    // Hvis hele strengen ikke kan tolkes som et tal,
+    // så kommer 'end' til at pege tilbage på start -> fejl.
+    long p = strtol(port_str, &end, 10);
+
+    // Tjekker om konverteringen fejlede, eller porten er uden for range.
+    if (end == port_str || p < 1 || p > 65535) {
+        printf("Invalid port '%s'\n", port_str);
+        return -1;   // returnér fejl så caller ved det ikke gik
+    }
+
+    // Laver en korrekt formateret portstreng (uden mærkelige bytes).
+    char portbuf[16];
+    snprintf(portbuf, sizeof(portbuf), "%ld", p);
+
+    // Kopierer IP'en til en buffer (igen for at være sikker på at formatet er ok).
+    char ip_copy[IP_LEN];
+    snprintf(ip_copy, sizeof(ip_copy), "%s", ip);
+
+    // compsys_helper_open_clientfd åbner selve socket-forbindelsen.
+    return compsys_helper_open_clientfd(ip_copy, portbuf);
+}
+
+
+
+
+
+
+
+
+
+
+
+// Sender en REGISTER-request til en peer jeg vil forbinde mig til.
+// Det her er basically: “Hej, må jeg være med i jeres netværk?”
+// REGISTER giver altid et svar tilbage med en komplet peerlist,
+// medmindre password/signature er forkert.
+void send_register()
+{
+    char peer_ip[IP_LEN];
+    char peer_port_str[16];
+
+    // Nulstiller portbufferen (scanf efterlader mærkelige ting nogle gange)
+    memset(peer_port_str, 0, sizeof(peer_port_str));
+
+    // Spørger brugeren hvem vi vil registrere os hos
+    printf("Enter peer IP to connect to: ");
+    scanf(" %15s", peer_ip);
+
+    printf("Enter peer port to connect to: ");
+    scanf(" %15s", peer_port_str);
+
+    // Fjerner evt. newline fra scanf
+    peer_port_str[strcspn(peer_port_str, "\r\n")] = 0;
+    printf("[DEBUG] peer_port_str entered = '%s'\n", peer_port_str);
+
+    // Debug -> viser raw bytes fra port_str (nok mest til fejlfinding)
+    printf("DBG bytes:");
+    for (int i = 0; i < 16; i++) printf(" %02X", (unsigned char)peer_port_str[i]);
+    printf("\n");
+
+    // Jeg bruger min egen port-parser pga scanf bug med skjulte bytes
+    int fd = open_clientfd_nocheck(peer_ip, peer_port_str);
+    if (fd < 0) {
+        printf("Cannot connect.\n");
+        return;
+    }
+
+
+    // Bygger selve REGISTER-headeren
+    uint32_t msg_len = REQUEST_HEADER_LEN;
+    char msg[msg_len];
+
+    // Afsenderens IP (mig selv)
+    memset(msg, 0, IP_LEN);
+    memcpy(msg, my_address->ip, IP_LEN);
+
+    // Afsenderens port
+    uint32_t netp = htobe32(my_address->port);
+    memcpy(msg + IP_LEN, &netp, 4);
+
+    // Afsenderens signature (beviser at vi kender password)
+    memcpy(msg + IP_LEN + 4, my_address->signature, SHA256_HASH_SIZE);
+
+    // Kommando = REGISTER
+    uint32_t cmd = htobe32(COMMAND_REGISTER);
+    memcpy(msg + IP_LEN + 4 + SHA256_HASH_SIZE, &cmd, 4);
+
+    // REGISTER har altid length = 0
+    uint32_t zero = 0;
+    memcpy(msg + IP_LEN + 4 + SHA256_HASH_SIZE + 4, &zero, 4);
+
+    // Sender REGISTER-pakken
+    compsys_helper_writen(fd, msg, msg_len);
+
+
+    // Modtag svar (peerlist + status)
+    ReplyHeader_t reply;
+    compsys_helper_readn(fd, &reply, sizeof(reply));
+
+    uint32_t status = be32toh(reply.status);
+
+    // Tjek hvad serveren siger om vores registration
+    if (status == STATUS_PEER_EXISTS) {
+        printf("You were already registered on that peer.\n");
+
+    } else if (status == STATUS_BAD_PASSWORD) {
+        printf("Password mismatch! Registration rejected.\n");
+        close(fd);
+        return;
+
+    } else if (status != STATUS_OK) {
+        printf("Register failed -> status %u\n", status);
+        close(fd);
+        return;
+    }
+
+    // Hvis status er OK -> modtager en peerlist
+    reply.length = be32toh(reply.length);
+
+    char *payload = NULL;
+    if (reply.length > 0) {
+        payload = malloc(reply.length);
+        compsys_helper_readn(fd, payload, reply.length);
+    }
+
+    // Parser peerlisten: den består af N entries på 68 bytes
+    uint32_t entries = reply.length / PEER_ADDR_LEN;
+    for (uint32_t i = 0; i < entries; i++) {
+        uint32_t pos = i * PEER_ADDR_LEN;
+
+        char ipbuf[IP_LEN];
+        memcpy(ipbuf, payload + pos, IP_LEN);
+
+        uint32_t port;
+        memcpy(&port, payload + pos + IP_LEN, 4);
+        port = be32toh(port);
+
+        hashdata_t sig;
+        memcpy(sig, payload + pos + IP_LEN + 4, SHA256_HASH_SIZE);
+
+        char salt[SALT_LEN];
+        memcpy(salt, payload + pos + IP_LEN + 4 + SHA256_HASH_SIZE, SALT_LEN);
+
+        // Tilføjer peer til min lokale netværksliste
+        add_peer_to_network(ipbuf, port, sig, salt);
+    }
+
+    if (payload) free(payload);
+    close(fd);
+
+    // Print hele netværket så jeg kan se resultatet af REGISTER
+    print_network();
+}
+
+
+
+
+
+
+
+// Modtager en fil i blokke.
+// Dette er “modsætningen” til handle_retrieve(), så de to SKAL være enige om formatet.
+// Flowet er basically:
+//   1) læs første reply-header (skal være block 0)
+//   2) læg payload fra block 0 i buffer og tjek block_hash
+//   3) læs alle efterfølgende blokke én efter én
+//   4) verificér block_hash for hver blok
+//   5) til sidst -> verificér total_hash (hele filen)
+//   6) skriv filen til disk
+static int receive_file_blocks(int fd, const char *outname)
+{
+    ReplyHeader_t reply;
+
+    // Læs første header — den MÅ være block 0
+    if (compsys_helper_readn(fd, &reply, sizeof(reply)) <= 0) {
+        printf("Error: unable to read reply header.\n");
+        return -1;
+    }
+
+    uint32_t status      = be32toh(reply.status);
+    uint32_t block_no    = be32toh(reply.this_block);
+    uint32_t block_count = be32toh(reply.block_count);
+    uint32_t payload_len = be32toh(reply.length);
+
+    // Total-hash fra den første blok -> bruges senere til slutverifikation
+    hashdata_t expected_total_hash;
+    memcpy(expected_total_hash, reply.total_hash, SHA256_HASH_SIZE);
+
+    if (status != STATUS_OK) {
+        printf("Retrieve failed -> status = %u\n", status);
+        return -1;
+    }
+
+    // Første blok SKAL være block 0 ifølge protokollen
+    if (block_no != 0) {
+        printf("Protocol error: first block was not block 0.\n");
+        return -1;
+    }
+
+    // Alloker plads til alle blokke (maks størrelse)
+    uint32_t block_data_max = MAX_MSG_LEN - REPLY_HEADER_LEN;
+    uint32_t max_total = block_count * block_data_max;
+
+    char *filebuf = malloc(max_total);
+    if (!filebuf) {
+        printf("Memory allocation failed.\n");
+        return -1;
+    }
+
+    // --- Læs payload for block 0 ---
+    if (payload_len > 0) {
+        if (compsys_helper_readn(fd, filebuf, payload_len) <= 0) {
+            printf("Error reading block payload.\n");
+            free(filebuf);
+            return -1;
+        }
+    }
+
+    uint32_t offset = payload_len;
+
+    // Verificér block_hash for block 0
+    {
+        hashdata_t local_hash;
+        get_data_sha(filebuf, local_hash, payload_len, SHA256_HASH_SIZE);
+
+        if (memcmp(local_hash, reply.block_hash, SHA256_HASH_SIZE) != 0) {
+            printf("Error: block 0 hash mismatch! File corrupted.\n");
+            free(filebuf);
+            return -1;
+        }
+    }
+
+    // --- Læs resten af blokkene en efter en ---
+    for (uint32_t b = 1; b < block_count; b++) {
+
+        // Læs header for blok b
+        if (compsys_helper_readn(fd, &reply, sizeof(reply)) <= 0) {
+            printf("Error reading header for block %u\n", b);
+            free(filebuf);
+            return -1;
+        }
+
+        uint32_t b_status = be32toh(reply.status);
+        uint32_t b_block  = be32toh(reply.this_block);
+        uint32_t b_len    = be32toh(reply.length);
+
+        if (b_status != STATUS_OK) {
+            printf("Error: block %u returned status %u\n", b, b_status);
+            free(filebuf);
+            return -1;
+        }
+
+        if (b_block != b) {
+            printf("Protocol mismatch: expected block %u but got %u\n", b, b_block);
+            free(filebuf);
+            return -1;
+        }
+
+        // Læs payload for denne blok
+        if (b_len > 0) {
+            if (compsys_helper_readn(fd, filebuf + offset, b_len) <= 0) {
+                printf("Error reading payload for block %u\n", b);
+                free(filebuf);
+                return -1;
+            }
+        }
+
+        // --- block_hash check ---
+        {
+            hashdata_t local_hash;
+            get_data_sha(filebuf + offset, local_hash, b_len, SHA256_HASH_SIZE);
+
+            if (memcmp(local_hash, reply.block_hash, SHA256_HASH_SIZE) != 0) {
+                printf("Error: block %u hash mismatch! File corrupted.\n", b);
+                free(filebuf);
+                return -1;
+            }
+        }
+
+        offset += b_len;
+    }
+
+    // ---- Total hash check (hele filen) ----
+    {
+        hashdata_t computed_total;
+        get_data_sha(filebuf, computed_total, offset, SHA256_HASH_SIZE);
+
+        // Hvis de ikke matcher -> filen er korrupt
+        if (memcmp(computed_total, expected_total_hash, SHA256_HASH_SIZE) != 0) {
+            printf("Error: total file hash mismatch! Transfer corrupted.\n");
+            free(filebuf);
+            return -1;
+        }
+    }
+
+    // --- Skriv hele filens indhold til output-fil ---
+    FILE *out = fopen(outname, "wb");
+    if (!out) {
+        printf("Error: cannot write output file.\n");
+        free(filebuf);
+        return -1;
+    }
+
+    fwrite(filebuf, 1, offset, out);
+    fclose(out);
+
+    printf("File \"%s\" saved securely (%u bytes).\n", outname, offset);
+
+    free(filebuf);
+    return offset;
+}
+
+
+
+
+
+
+
+
+
+
+// Sender en RETRIEVE-request til en peer og henter en fil tilbage.
+// Det her er basically klient-siden af filoverførslen.
+// Jeg vælger en peer, bygger en RETRIEVE-header med filnavnet som body,
+// og så bruger jeg receive_file_blocks() til at hente filen ned.
+void send_retrieve()
+{
+    // Kan ikke hente noget hvis netværkslisten er tom.
+    if (peer_count == 0) {
+        printf("No peers to retrieve from.\n");
+        return;
+    }
+
+    // Læs filnavnet fra brugeren.
+    char filename[PATH_LEN];
+    printf("Enter filename: ");
+    scanf(" %255s", filename);
+
+    // Vis listen over kendte peers, så brugeren kan vælge én.
+    print_network();
+    printf("Select peer index: ");
+    int idx;
+    scanf(" %d", &idx);
+
+    // Simpel bounds-check på valg af peer.
+    if (idx < 0 || (uint32_t)idx >= peer_count) {
+        printf("Invalid index.\n");
+        return;
+    }
+
+    // Åbn forbindelse til den valgte peer.
+    char portbuf[16];
+    sprintf(portbuf, "%u", network[idx]->port);
+
+    int fd = compsys_helper_open_clientfd(network[idx]->ip, portbuf);
+    if (fd < 0) {
+        printf("Cannot connect.\n");
+        return;
+    }
+
+    // Byg RETRIEVE-requesten
+
+    // Body’en er bare filnavnet + null-byte
+    uint32_t body_len = strlen(filename) + 1;
+    uint32_t msg_len = REQUEST_HEADER_LEN + body_len;
+
+    char *msg = malloc(msg_len);
+    memset(msg, 0, msg_len);
+
+    // afsenderens IP
+    memcpy(msg, my_address->ip, IP_LEN);
+
+    // afsenderens port i big-endian
+    uint32_t netp = htobe32(my_address->port);
+    memcpy(msg + IP_LEN, &netp, 4);
+
+    // afsenderens signature (til password-check)
+    memcpy(msg + IP_LEN + 4, my_address->signature, SHA256_HASH_SIZE);
+
+    // kommando = RETRIEVE
+    uint32_t cmd = htobe32(COMMAND_RETREIVE);
+    memcpy(msg + IP_LEN + 4 + SHA256_HASH_SIZE, &cmd, 4);
+
+    // længden på body
+    uint32_t netlen = htobe32(body_len);
+    memcpy(msg + IP_LEN + 4 + SHA256_HASH_SIZE + 4, &netlen, 4);
+
+    // kopier filnavnet ind som body
+    memcpy(msg + REQUEST_HEADER_LEN, filename, body_len);
+
+    // send hele requesten
+    compsys_helper_writen(fd, msg, msg_len);
+    free(msg);
+
+
+    // Modtag filen i blokke
+    int bytes = receive_file_blocks(fd, filename);
+    close(fd);
+
+    // hvis alt gik godt -> sig det
+    if (bytes >= 0)
+        printf("File \"%s\" saved (%d bytes).\n", filename, bytes);
+}
+
+
+
+
+
+// Version af send_retrieve() hvor jeg ikke selv vælger peer,
+// men i stedet vælger en tilfældig peer fra netværkslisten.
+// God til at teste at alle peers håndterer RETRIEVE korrekt,
+// og at netværket er synkroniseret (INFORM virker).
+void send_random_retrieve()
+{
+    // Først: kan jeg overhovedet hente noget?
+    if (peer_count == 0) {
+        printf("No peers to retrieve from.\n");
+        return;
+    }
+
+    // Spørger brugeren om hvilken fil de vil hente.
+    char filename[PATH_LEN];
+    printf("Enter filename: ");
+    scanf(" %255s", filename);
+
+    // Vælg en tilfældig peer fra listen.
+    // rand() % peer_count giver et index i range [0, peer_count-1].
+    uint32_t idx = rand() % peer_count;
+
+    printf("Retrieving from random peer %u (%s:%u)\n",
+           idx, network[idx]->ip, network[idx]->port);
+
+    // Åbn forbindelse til den tilfældige peer.
+    char portbuf[16];
+    sprintf(portbuf, "%u", network[idx]->port);
+
+    int fd = compsys_helper_open_clientfd(network[idx]->ip, portbuf);
+    if (fd < 0) {
+        printf("Cannot connect to chosen peer.\n");
+        return;
+    }
+
+    // Byg RETRIEVE-requesten
+    uint32_t body_len = strlen(filename) + 1;
+    uint32_t msg_len = REQUEST_HEADER_LEN + body_len;
+
+    char *msg = malloc(msg_len);
+    memset(msg, 0, msg_len);
+
+    // afsenderens IP (mig selv)
+    memcpy(msg, my_address->ip, IP_LEN);
+
+    // afsenderens port
+    uint32_t netp = htobe32(my_address->port);
+    memcpy(msg + IP_LEN, &netp, 4);
+
+    // min signature (password-bevis)
+    memcpy(msg + IP_LEN + 4, my_address->signature, SHA256_HASH_SIZE);
+
+    // kommando = RETRIEVE
+    uint32_t cmd = htobe32(COMMAND_RETREIVE);
+    memcpy(msg + IP_LEN + 4 + SHA256_HASH_SIZE, &cmd, 4);
+
+    // body-length (filnavn + nullbyte)
+    uint32_t netlen = htobe32(body_len);
+    memcpy(msg + IP_LEN + 4 + SHA256_HASH_SIZE + 4, &netlen, 4);
+
+    // placerer selve filnavnet i body
+    memcpy(msg + REQUEST_HEADER_LEN, filename, body_len);
+
+    // send requesten
+    compsys_helper_writen(fd, msg, msg_len);
+    free(msg);
+
+    // Modtag filen i blokke
+    int bytes = receive_file_blocks(fd, filename);
+    close(fd);
+
+    if (bytes >= 0)
+        printf("File \"%s\" saved (%d bytes).\n", filename, bytes);
+}
+
+// Dette er “klient”-delen af min peer, dvs. den tråd der snakker med brugeren.
+// Her vælger jeg manuelt hvilke kommandoer jeg vil sende til netværket.
+// Den kører i en løkke indtil brugeren vælger quit.
+void *client_thread()
+{
+    while (true) {
+        // Menuen brugeren kan vælge fra
+        printf("\nCommands:\n");
+        printf("1) register\n");
+        printf("2) retrieve (random peer)\n");
+        printf("3) retrieve (choose peer)\n");
+        printf("4) quit\n");
+        printf("5) list\n");
+        printf("> ");
+
+        int choice;
+
+        // scanf er meget sensitiv -> hvis input fails, så rydder jeg stdin.
+        if (scanf(" %d", &choice) != 1) {
+            // Rydder buffer for at undgå infinite loops
+            while (getchar() != '\n');
+            continue;
+        }
+
+        // Brugeren vælger hvilken netværkskommando der skal køres.
+        if (choice == 1)
+            send_register();           // registrer mig hos en peer
+
+        else if (choice == 2)
+            send_random_retrieve();    // hent fil fra en tilfældig peer
+
+        else if (choice == 3)
+            send_retrieve();           // hent fil fra specifik peer
+
+        else if (choice == 4) {
+            run = false;               // stopper både server og klient
+            break;
+        }
+
+        else if (choice == 5)
+            print_network();           // vis hele peer-listen
+    }
+
+    return NULL;
+}
 
 bool is_equal(hashdata_t first, hashdata_t second){
     for(int i = 0; i < SHA256_HASH_SIZE; i++){
@@ -313,12 +1028,6 @@ void register_peer(int fd, RequestHeader_t* header){
     send_inform();
 }
 
-void inform(int fd, RequestHeader_t* data){
-    assert(0);
-}
-
-
-
 void retrive(int fd, RequestHeader_t* data){
     char file_path[be32toh(data->length) + 1];
     ssize_t bytes = compsys_helper_readn(fd, file_path, be32toh(data->length));
@@ -418,9 +1127,12 @@ void* server_thread(){
             case COMMAND_REGISTER:
                 register_peer(client_fd, &header);
                 break;
-            case COMMAND_INFORM:
-                inform(client_fd, &header);
+            case COMMAND_INFORM:{
+                char body[header.length];
+                compsys_helper_readn(client_fd, body, header.length);
+                handle_inform(client_fd, &header, body);
                 break;
+            }
             case COMMAND_RETREIVE:
                 retrive(client_fd, &header);
                 break;
@@ -429,6 +1141,7 @@ void* server_thread(){
                 respond(client_fd, STATUS_MALFORMED, NULL, 0);
                 break;
             }
+            close(client_fd);
 
         }
     }
