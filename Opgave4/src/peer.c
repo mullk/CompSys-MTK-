@@ -592,7 +592,7 @@ static int receive_file_blocks(int fd, const char *outname)
         // Læs payload for denne blok
         if (b_len > 0) {
             if (compsys_helper_readn(fd, filebuf + offset, b_len) <= 0) {
-                printf("Error reading payload for block %u\n", b);
+                printf("Error reading payload for block %u, %s\n", b, strerror(errno));
                 free(filebuf);
                 return -1;
             }
@@ -973,8 +973,8 @@ void send_inform(){
         memcpy(message + REQUEST_HEADER_LEN, network[peer_count - 1]->ip, IP_LEN);
         uint32_t peer_port = htobe32(network[peer_count - 1]->port);
         memcpy(message + (REQUEST_HEADER_LEN + IP_LEN), &peer_port, PORT_LEN);
-        memcpy(message + (REQUEST_HEADER_LEN + IP_LEN + PORT_LEN), my_address->signature, SHA256_HASH_SIZE);
-        memcpy(message + (REQUEST_HEADER_LEN + IP_LEN + PORT_LEN + SHA256_HASH_SIZE), my_address->salt, SALT_LEN);
+        memcpy(message + (REQUEST_HEADER_LEN + IP_LEN + PORT_LEN), network[peer_count - 1]->signature, SHA256_HASH_SIZE);
+        memcpy(message + (REQUEST_HEADER_LEN + IP_LEN + PORT_LEN + SHA256_HASH_SIZE), network[peer_count - 1]->salt, SALT_LEN);
         
         send_to_client(message, message_len, network[i]->ip, network[i]->port);
     }
@@ -982,7 +982,7 @@ void send_inform(){
 
 bool is_unregistrered(RequestHeader_t* data){
     for(uint32_t i = 0; i < peer_count; i++){
-        if(network[i]->ip == data->ip) return false;
+        if(strcmp(network[i]->ip, data->ip) == 0 && network[i]->port == data->port) return false;
     }
     return true;
 }
