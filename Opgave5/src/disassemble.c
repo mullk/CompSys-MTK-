@@ -15,10 +15,6 @@
 #define I_TYPE_IMM_MASK 0xFFF00000
 #define S_TYPE_IMM_MASK 0xFE000000
 #define U_TYPE_IMM_MASK 0xFFFFF000
-#define J_TYPE_IMM_MASK_1_10 0x7FE00000
-#define J_TYPE_IMM_MASK_11 0x100000
-#define J_TYPE_IMM_MASK_12_19 0xFF000
-#define J_TYPE_IMM_MASK_20 0x80000000
 
 #define OPCODE_LUI 0x37
 #define OPCODE_AUIPC 0x17
@@ -83,7 +79,7 @@ void handle_i_type_load(uint32_t instruction, char* result, uint8_t* used, size_
 void handle_s_type(uint32_t instruction, char* result, uint8_t* used, size_t buf_size);
 void handle_b_type(uint32_t addr, uint32_t instruction, char* result, uint8_t* used, size_t buf_size);
 void handle_u_type(uint32_t instruction, char* result, uint8_t* used, size_t buf_size);
-void handle_j_type(uint32_t instruction, char* result, uint8_t* used, size_t buf_size);
+void handle_j_type(uint32_t addr, uint32_t instruction, char* result, uint8_t* used, size_t buf_size);
 
 void disassemble(uint32_t addr, uint32_t instruction, char* result, size_t buf_size, struct symbols* symbols){
     uint8_t used = 0;
@@ -103,7 +99,7 @@ void disassemble(uint32_t addr, uint32_t instruction, char* result, size_t buf_s
         handle_u_type(instruction, result, &used, buf_size);
     }else if(opcode == OPCODE_JAL){
         add_mnemonic("JAL", result, &used, buf_size);
-        handle_j_type(instruction, result, &used, buf_size);
+        handle_j_type(addr, instruction, result, &used, buf_size);
     }else if(opcode == OPCODE_JALR){
         uint32_t func3 = (instruction & FUNC3_MASK) >> 12;
         switch (func3){
@@ -584,13 +580,30 @@ void handle_u_type(uint32_t instruction, char* result, uint8_t* used, size_t buf
     sprintf(&result[*used], "%#x", imm);
 }
 
-void handle_j_type(uint32_t instruction, char* result, uint8_t* used, size_t buf_size){
+void handle_j_type(uint32_t addr, uint32_t instruction, char* result, uint8_t* used, size_t buf_size){
+uint32_t RS2_UPPER_3 = 0x1E00000;
+    uint32_t RS2_LOWER_1 = 0x100000;
+    uint32_t IMM_LOWER_6 = 0x7E000000;
+
     decode_registre(instruction, REGISTER_RD, REGISTER_COMMA_TRUE, result, used, buf_size);
-    //TODO fix immediate
-    uint32_t imm = (instruction & J_TYPE_IMM_MASK_1_10) >> 21;
-    imm = imm | (instruction & J_TYPE_IMM_MASK_11) >> 10;
-    imm = imm | (instruction & J_TYPE_IMM_MASK_12_19) >> 1;
-    imm = imm | (instruction & J_TYPE_IMM_MASK_20);
+    
+    uint32_t func3 = instruction & FUNC3_MASK;
+    uint32_t rs1 = instruction & RS1_MASK;
+    uint32_t rs2 = instruction & RS2_MASK;
+    uint32_t imm_inst = instruction & S_TYPE_IMM_MASK;
+
+    uint32_t imm = 0;
+    
+    imm |= (rs2 & RS2_UPPER_3) >> 20;
+    imm |= (imm_inst & IMM_LOWER_6) >> 20;
+    imm |= (rs2 & RS2_LOWER_1) >> 9;
+    imm |= func3 | rs1;
+
+    if(imm & 0x80000000 == 0x80000000){
+        imm |= 0xFFFFF000;
+    }
+
+    imm += addr;
 
     sprintf(&result[*used], "%#x", imm);
 }
