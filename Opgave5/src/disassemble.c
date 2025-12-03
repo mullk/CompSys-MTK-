@@ -520,23 +520,21 @@ void handle_i_type_imm(uint32_t instruction, char* result, uint8_t* used, size_t
 void handle_i_type_load(uint32_t instruction, char* result, uint8_t* used, size_t buf_size){
     decode_registre(instruction, REGISTER_RD, REGISTER_COMMA_TRUE, result, used, buf_size);
     
-    result[*used] = '(';
-    (*used)++;
-    uint32_t imm = 0;
+        uint32_t imm = 0;
     i_type_immediat_decode(instruction, &imm);
     convert_imm_to_str(imm, "%i", result, used, buf_size);
-    result[*used] = ')';
-    (*used)++;
 
+    result[*used] = '(';
+    (*used)++;
     decode_registre(instruction, REGISTER_RS1, REGISTER_COMMA_FALSE, result, used, buf_size);
+result[*used] = ')';
+    (*used)++;
 }
 
 void handle_s_type(uint32_t instruction, char* result, uint8_t* used, size_t buf_size){
     decode_registre(instruction, REGISTER_RS2, REGISTER_COMMA_TRUE, result, used, buf_size);
 
-    result[*used] = '(';
-    (*used)++;
-    uint32_t imm =(instruction & S_TYPE_IMM_MASK) >> 21;
+        uint32_t imm =(instruction & S_TYPE_IMM_MASK) >> 21;
     uint32_t imm_rd = (instruction & RD_MASK) >> 7;
     imm = imm | imm_rd;
     if((imm & 0x800) == 0x800){
@@ -544,10 +542,12 @@ void handle_s_type(uint32_t instruction, char* result, uint8_t* used, size_t buf
         imm = imm | 0xFFFFF800;
     }
     convert_imm_to_str(imm, "%i", result, used, buf_size);
-    result[*used] = ')';
-    (*used)++;
 
+    result[*used] = '(';
+    (*used)++;
     decode_registre(instruction, REGISTER_RS1, REGISTER_COMMA_FALSE, result, used, buf_size);
+result[*used] = ')';
+    (*used)++;
 }
 
 void handle_b_type(uint32_t addr, uint32_t instruction, char* result, uint8_t* used, size_t buf_size){
