@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <assert.h>
 
+#include "read_elf.h"
+
 #define OPCODE_MASK 0x7F
 #define FUNC3_MASK 0x7000
 #define RD_MASK 0xF80
@@ -86,6 +88,11 @@ void handle_j_type(uint32_t instruction, char* result, uint8_t* used, size_t buf
 void disassemble(uint32_t addr, uint32_t instruction, char* result, size_t buf_size, struct symbols* symbols){
     uint8_t used = 0;
     memset(result, '\0', buf_size);
+
+    char* sym = symbols_value_to_sym(symbols, addr);
+    if(sym != NULL){
+        printf("\n%x <%s>:\n", addr, sym);
+    }
 
     uint32_t opcode = (instruction & OPCODE_MASK);
     if(opcode == OPCODE_LUI){
@@ -548,22 +555,26 @@ void handle_s_type(uint32_t instruction, char* result, uint8_t* used, size_t buf
 }
 
 void handle_b_type(uint32_t addr, uint32_t instruction, char* result, uint8_t* used, size_t buf_size){
+    uint32_t RD_UPPER_3 = 0xF00;
+    uint32_t RD_LOWER_1 = 0x80;
+    uint32_t IMM_LOWER_6 = 0x7E000000;
+
     decode_registre(instruction, REGISTER_RS1, REGISTER_COMMA_TRUE, result, used, buf_size);
     decode_registre(instruction, REGISTER_RS2, REGISTER_COMMA_TRUE, result, used, buf_size);
     
-    uint32_t imm =(instruction & S_TYPE_IMM_MASK) >> 21;
-    uint32_t imm_rd = (instruction & RD_MASK) >> 7;
-    uint32_t imm_rd_low = imm_rd & 0x1;
-    imm_rd_low = imm_rd_low << 11;
-    imm_rd &= 0xFFFFFFFE;
-    imm_rd |= imm_rd_low;
+    uint32_t imm_inst = (instruction & S_TYPE_IMM_MASK);
+    uint32_t rd = (instruction & RD_MASK);
 
-    imm = imm | imm_rd;
-    if((instruction & 0x80000000) == 0x80000000){
-        imm = imm & 0xFFF;
-        imm = imm | 0xFFFFF000;
+    uint32_t imm = 0;
+
+    imm |= (rd & RD_UPPER_3) >> 7;
+    imm |= (imm_inst & IMM_LOWER_6) >> 20;
+    imm |= (rd & RD_LOWER_1) << 4;
+    if(imm & 0x80000000 == 0x80000000){
+        imm |= 0xFFFFF000;
     }
 
+    imm += addr;
     convert_imm_to_str(imm, "%#x", result, used, buf_size);
 }
 void handle_u_type(uint32_t instruction, char* result, uint8_t* used, size_t buf_size){
