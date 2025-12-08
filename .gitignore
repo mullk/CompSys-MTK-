@@ -5,3 +5,9 @@
 *.o
 *.tsv
 .vscode
+.DS_Store
+Opgave5/src/sim.dSYM/Contents/Info.plist
+Opgave5/src/sim.dSYM/Contents/Resources/Relocations/aarch64/sim.yml
+Opgave5/src/sim.dSYM/Contents/Resources/DWARF/sim
+Opgave5/src/sim
+Opgave5/src/Test/.Rapp.history
