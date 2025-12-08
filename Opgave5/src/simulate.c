@@ -6,30 +6,30 @@
 
 // --- Hjælpefunktioner ------------------------------------------------------
 
-static inline int32_t sign_extend(int32_t value, int bits) {
+int32_t sign_extend(int32_t value, int bits) {
     int32_t mask = 1 << (bits - 1);
     return (value ^ mask) - mask;
 }
 
-static inline uint32_t get_opcode(uint32_t inst) { return inst & 0x7F; }
-static inline uint32_t get_rd(uint32_t inst)     { return (inst >> 7) & 0x1F; }
-static inline uint32_t get_f3(uint32_t inst)     { return (inst >> 12) & 0x7; }
-static inline uint32_t get_rs1(uint32_t inst)    { return (inst >> 15) & 0x1F; }
-static inline uint32_t get_rs2(uint32_t inst)    { return (inst >> 20) & 0x1F; }
-static inline uint32_t get_f7(uint32_t inst)     { return (inst >> 25) & 0x7F; }
+uint32_t get_opcode(uint32_t inst) { return inst & 0x7F; }
+uint32_t get_rd(uint32_t inst)     { return (inst >> 7) & 0x1F; }
+uint32_t get_f3(uint32_t inst)     { return (inst >> 12) & 0x7; }
+uint32_t get_rs1(uint32_t inst)    { return (inst >> 15) & 0x1F; }
+uint32_t get_rs2(uint32_t inst)    { return (inst >> 20) & 0x1F; }
+uint32_t get_f7(uint32_t inst)     { return (inst >> 25) & 0x7F; }
 
 // --- Immediate rekonstruktion (I/S/B/U/J) ---------------------------------
 
-static inline int32_t imm_I(uint32_t inst) {
+int32_t imm_I(uint32_t inst) {
     return sign_extend(inst >> 20, 12);
 }
 
-static inline int32_t imm_S(uint32_t inst) {
+int32_t imm_S(uint32_t inst) {
     int32_t imm = ((inst >> 25) << 5) | ((inst >> 7) & 0x1F);
     return sign_extend(imm, 12);
 }
 
-static inline int32_t imm_B(uint32_t inst) {
+int32_t imm_B(uint32_t inst) {
     int32_t imm =
         ((inst >> 31) & 1) << 12 |
         ((inst >> 7) & 1) << 11 |
@@ -39,11 +39,11 @@ static inline int32_t imm_B(uint32_t inst) {
     return sign_extend(imm, 13);
 }
 
-static inline int32_t imm_U(uint32_t inst) {
+int32_t imm_U(uint32_t inst) {
     return (int32_t)(inst & 0xFFFFF000);
 }
 
-static inline int32_t imm_J(uint32_t inst) {
+int32_t imm_J(uint32_t inst) {
     int32_t imm =
         ((inst >> 31) & 1) << 20 |
         ((inst >> 21) & 0x3FF) << 1 |
@@ -53,19 +53,9 @@ static inline int32_t imm_J(uint32_t inst) {
     return sign_extend(imm, 21);
 }
 
-
-
-
-
-
-
-
-
-
-
 // --- Systemkald -------------------------------------------------------------
 
-static int handle_ecall(int32_t regs[]) {
+int handle_ecall(int32_t regs[]) {
     int a7 = regs[17]; // x17 = A7
     int a0 = regs[10]; // x10 = A0
 
@@ -85,7 +75,7 @@ static int handle_ecall(int32_t regs[]) {
 }
 
 // --- Hovedsimulator ---------------------------------------------------------
-
+//Det skal ikke læses som en deklaration af en struct. De to første ord = return type declaration. 
 struct Stat simulate(struct memory *mem, int start_addr, FILE *log_file, struct symbols* symbols)
 {
     struct Stat st = {0};
@@ -107,6 +97,10 @@ struct Stat simulate(struct memory *mem, int start_addr, FILE *log_file, struct 
 
         int32_t v1 = regs[rs1];
         int32_t v2 = regs[rs2];
+
+        if (log_file) {
+            fprintf(log_file, "%08x : %08x\n", pc, inst);
+        }
 
         // --- LUI / AUIPC ----------------------------------------------------
         if (opcode == 0x37) {                 // LUI
@@ -234,9 +228,3 @@ struct Stat simulate(struct memory *mem, int start_addr, FILE *log_file, struct 
 
     return st;
 }
-
-
-
-
-
-
