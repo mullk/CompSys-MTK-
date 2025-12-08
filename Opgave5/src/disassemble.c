@@ -70,22 +70,24 @@
 #define REGISTER_RS1 1
 #define REGISTER_RS2 2 //ebreak, fence, fence.i, CSRRW, CSRRS, CSRRC, CSRRWI, CSRRSI og CSRRCI.
 
-void add_mnemonic(char* mnemonic, char* result, uint8_t* used, size_t buf_size);
-void decode_registre(uint32_t instruction, uint8_t registr, uint8_t comma, char* result, uint8_t* used, size_t buf_size);
-void handle_i_type(uint32_t instruction, char* result, uint8_t* used, size_t buf_size);
-void handle_i_type_shift(uint32_t instruction, char* result, uint8_t* used, size_t buf_size);
-void handle_i_type_imm(uint32_t instruction, char* result, uint8_t* used, size_t buf_size);
-void handle_i_type_load(uint32_t instruction, char* result, uint8_t* used, size_t buf_size);
-void handle_s_type(uint32_t instruction, char* result, uint8_t* used, size_t buf_size);
-void handle_b_type(uint32_t addr, uint32_t instruction, char* result, uint8_t* used, size_t buf_size);
-void handle_u_type(uint32_t instruction, char* result, uint8_t* used, size_t buf_size);
-void handle_j_type(uint32_t addr, uint32_t instruction, char* result, uint8_t* used, size_t buf_size, struct symbols* symbols);
+void add_mnemonic(char* mnemonic, char* result, size_t* used, size_t buf_size);
+void unknown_instruction(char* result, size_t buf_size);
+void overflow_error(char* result, size_t* used, size_t buf_size);
+void decode_registre(uint32_t instruction, uint8_t registr, uint8_t comma, char* result, size_t* used, size_t buf_size);
+void handle_i_type(uint32_t instruction, char* result, size_t* used, size_t buf_size);
+void handle_i_type_shift(uint32_t instruction, char* result, size_t* used, size_t buf_size);
+void handle_i_type_imm(uint32_t instruction, char* result, size_t* used, size_t buf_size);
+void handle_i_type_load(uint32_t instruction, char* result, size_t* used, size_t buf_size);
+void handle_s_type(uint32_t instruction, char* result, size_t* used, size_t buf_size);
+void handle_b_type(uint32_t addr, uint32_t instruction, char* result, size_t* used, size_t buf_size);
+void handle_u_type(uint32_t instruction, char* result, size_t* used, size_t buf_size);
+void handle_j_type(uint32_t addr, uint32_t instruction, char* result, size_t* used, size_t buf_size, struct symbols* symbols);
 
 void disassemble(uint32_t addr, uint32_t instruction, char* result, size_t buf_size, struct symbols* symbols){
-    uint8_t used = 0;
+    size_t used = 0;
     memset(result, '\0', buf_size);
 
-    char* sym = symbols_value_to_sym(symbols, addr);
+    const char* sym = symbols_value_to_sym(symbols, addr);
     if(sym != NULL){
         printf("\n%x <%s>:\n", addr, sym);
     }
@@ -108,8 +110,8 @@ void disassemble(uint32_t addr, uint32_t instruction, char* result, size_t buf_s
             handle_i_type(instruction, result, &used, buf_size);
             break;
         default:
-            assert(0);
-            break;
+            unknown_instruction(result, buf_size);
+            return;
         }
     }else if(opcode == OPCODE_BRANCH){
         uint32_t func3 = (instruction & FUNC3_MASK) >> 12;
@@ -139,8 +141,8 @@ void disassemble(uint32_t addr, uint32_t instruction, char* result, size_t buf_s
                 handle_b_type(addr, instruction, result, &used, buf_size);
                 break;
             default:
-                assert(0);
-                break;
+                unknown_instruction(result, buf_size);
+                return;
         }
     }else if(opcode == OPCODE_LOAD){
         uint32_t func3 = (instruction & FUNC3_MASK) >> 12;
@@ -166,7 +168,8 @@ void disassemble(uint32_t addr, uint32_t instruction, char* result, size_t buf_s
                 handle_i_type_load(instruction, result, &used, buf_size);
                 break;
             default:
-                break;
+                unknown_instruction(result, buf_size);
+                return;
         }
     }else if(opcode == OPCODE_STORE){
         uint32_t func3 = (instruction & FUNC3_MASK) >> 12;
@@ -184,7 +187,8 @@ void disassemble(uint32_t addr, uint32_t instruction, char* result, size_t buf_s
                 handle_s_type(instruction, result, &used, buf_size);
                 break;
             default:
-                break;
+                unknown_instruction(result, buf_size);
+                return;
         }
     }else if(opcode == OPCODE_NUMERIC_INTERMEDIARY){
         uint32_t func3 = (instruction & FUNC3_MASK) >> 12;
@@ -228,8 +232,8 @@ void disassemble(uint32_t addr, uint32_t instruction, char* result, size_t buf_s
                 break;
             }
             default:
-                assert(0);
-                break;
+                unknown_instruction(result, buf_size);
+                return;
         }
     }else if(opcode == OPCODE_NUMERIC){
         uint32_t func3 = (instruction & FUNC3_MASK) >> 12;
@@ -325,13 +329,15 @@ void disassemble(uint32_t addr, uint32_t instruction, char* result, size_t buf_s
                 break;
             }
             default:
-                assert(0);
-                break;
+                unknown_instruction(result, buf_size);
+                return;
         }
     }else if(opcode == OPCODE_ECALL){
         add_mnemonic("ECALL", result, &used, buf_size);
     }
-    assert(strcmp(result, ""));
+    if(*result == 0){
+        unknown_instruction(result, buf_size);
+    }
 }
 
 void convert_registry(uint32_t reg_code, char* reg){
@@ -440,8 +446,13 @@ void convert_registry(uint32_t reg_code, char* reg){
     }
 }
 
-void add_mnemonic(char* mnemonic, char* result, uint8_t* used, size_t buf_size){
+void add_mnemonic(char* mnemonic, char* result, size_t* used, size_t buf_size){
     uint8_t FIXED_LEN = 8;
+    if(*used + FIXED_LEN >= buf_size){
+        overflow_error(result, used, buf_size);
+        return;
+    }
+
     memcpy(result + *used, mnemonic, strlen(mnemonic));
     *used += strlen(mnemonic);
     for(uint8_t i = 0; i < FIXED_LEN - strlen(mnemonic); i++){
@@ -450,7 +461,17 @@ void add_mnemonic(char* mnemonic, char* result, uint8_t* used, size_t buf_size){
     }
 }
 
-void decode_registre(uint32_t instruction, uint8_t registr, uint8_t comma, char* result, uint8_t* used, size_t buf_size){
+void unknown_instruction(char* result, size_t buf_size){
+    if(buf_size < 20) return;
+    sprintf(result, "Unknown instruction");
+}
+
+void overflow_error(char* result, size_t* used, size_t buf_size){
+    sprintf(result + (buf_size - 21), "ERR: Buffer to small");
+    *used = buf_size;
+}
+
+void decode_registre(uint32_t instruction, uint8_t registr, uint8_t comma, char* result, size_t* used, size_t buf_size){
     uint32_t reg_int;
     switch (registr)
     {
@@ -469,10 +490,18 @@ void decode_registre(uint32_t instruction, uint8_t registr, uint8_t comma, char*
     }
     char reg_char[5];
     convert_registry(reg_int, reg_char);
+    if(*used + strlen(reg_char) >= buf_size){
+        overflow_error(result, used, buf_size);
+        return;
+    }
     memcpy(&result[*used], reg_char, strlen(reg_char));
     *used += strlen(reg_char);
 
     if(comma == REGISTER_COMMA_TRUE){
+        if(*used + 1 >= buf_size){
+            overflow_error(result, used, buf_size);
+            return;
+        }
         result[*used] = ',';
         (*used)++;
     }
@@ -487,16 +516,21 @@ void i_type_immediat_decode(uint32_t instruction, uint32_t* imm){
     }
 }
 
-void convert_imm_to_str(uint32_t imm, char* form, char* result, uint8_t* used, size_t buf_size){
+void convert_imm_to_str(uint32_t imm, char* form, char* result, size_t* used, size_t buf_size){
     char imm_char[11];
     memset(imm_char, '\0', 11);
     sprintf(imm_char, form, imm);
+
+    if(*used + strlen(imm_char) >= buf_size){
+        overflow_error(result, used, buf_size);
+        return;
+    }
 
     memcpy(&result[*used], imm_char, strlen(imm_char));
     (*used) += strlen(imm_char);
 }
 
-void handle_i_type(uint32_t instruction, char* result, uint8_t* used, size_t buf_size){
+void handle_i_type(uint32_t instruction, char* result, size_t* used, size_t buf_size){
     decode_registre(instruction, REGISTER_RD, 1, result, used, buf_size);
     decode_registre(instruction, REGISTER_RS1, 1, result, used, buf_size);
 
@@ -504,7 +538,7 @@ void handle_i_type(uint32_t instruction, char* result, uint8_t* used, size_t buf
     i_type_immediat_decode(instruction, &imm);
     convert_imm_to_str(imm, "%i", result, used, buf_size);
 }
-void handle_i_type_shift(uint32_t instruction, char* result, uint8_t* used, size_t buf_size){
+void handle_i_type_shift(uint32_t instruction, char* result, size_t* used, size_t buf_size){
     decode_registre(instruction, REGISTER_RD, REGISTER_COMMA_TRUE, result, used, buf_size);
     decode_registre(instruction, REGISTER_RS1, REGISTER_COMMA_TRUE, result, used, buf_size);
 
@@ -512,13 +546,13 @@ void handle_i_type_shift(uint32_t instruction, char* result, uint8_t* used, size
     sprintf(&result[*used], "%#x", shift);
 }
 
-void handle_i_type_imm(uint32_t instruction, char* result, uint8_t* used, size_t buf_size){
+void handle_i_type_imm(uint32_t instruction, char* result, size_t* used, size_t buf_size){
     decode_registre(instruction, REGISTER_RD, REGISTER_COMMA_TRUE, result, used, buf_size);
     decode_registre(instruction, REGISTER_RS1, REGISTER_COMMA_TRUE, result, used, buf_size);
     decode_registre(instruction, REGISTER_RS2, REGISTER_COMMA_FALSE, result, used, buf_size);
 }
 
-void handle_i_type_load(uint32_t instruction, char* result, uint8_t* used, size_t buf_size){
+void handle_i_type_load(uint32_t instruction, char* result, size_t* used, size_t buf_size){
     decode_registre(instruction, REGISTER_RD, REGISTER_COMMA_TRUE, result, used, buf_size);
     
     uint32_t imm = 0;
@@ -532,7 +566,7 @@ void handle_i_type_load(uint32_t instruction, char* result, uint8_t* used, size_
     (*used)++;
 }
 
-void handle_s_type(uint32_t instruction, char* result, uint8_t* used, size_t buf_size){
+void handle_s_type(uint32_t instruction, char* result, size_t* used, size_t buf_size){
     decode_registre(instruction, REGISTER_RS2, REGISTER_COMMA_TRUE, result, used, buf_size);
 
     uint32_t imm =(instruction & S_TYPE_IMM_MASK) >> 21;
@@ -551,7 +585,7 @@ void handle_s_type(uint32_t instruction, char* result, uint8_t* used, size_t buf
     (*used)++;
 }
 
-void handle_b_type(uint32_t addr, uint32_t instruction, char* result, uint8_t* used, size_t buf_size){
+void handle_b_type(uint32_t addr, uint32_t instruction, char* result, size_t* used, size_t buf_size){
     uint32_t RD_UPPER_3 = 0xF00;
     uint32_t RD_LOWER_1 = 0x80;
     uint32_t IMM_LOWER_6 = 0x7E000000;
@@ -567,21 +601,21 @@ void handle_b_type(uint32_t addr, uint32_t instruction, char* result, uint8_t* u
     imm |= (rd & RD_UPPER_3) >> 7;
     imm |= (imm_inst & IMM_LOWER_6) >> 20;
     imm |= (rd & RD_LOWER_1) << 4;
-    if(imm & 0x80000000 == 0x80000000){
+    if((imm & 0x80000000) == 0x80000000){
         imm |= 0xFFFFF000;
     }
 
     imm += addr;
     convert_imm_to_str(imm, "%#x", result, used, buf_size);
 }
-void handle_u_type(uint32_t instruction, char* result, uint8_t* used, size_t buf_size){
+void handle_u_type(uint32_t instruction, char* result, size_t* used, size_t buf_size){
     decode_registre(instruction, REGISTER_RD, REGISTER_COMMA_TRUE, result, used, buf_size);
 
     uint32_t imm = (instruction & U_TYPE_IMM_MASK) >> 12;
     sprintf(&result[*used], "%#x", imm);
 }
 
-void handle_j_type(uint32_t addr, uint32_t instruction, char* result, uint8_t* used, size_t buf_size, struct symbols* symbols){
+void handle_j_type(uint32_t addr, uint32_t instruction, char* result, size_t* used, size_t buf_size, struct symbols* symbols){
     uint32_t RS2_UPPER_3 = 0x1E00000;
     uint32_t RS2_LOWER_1 = 0x100000;
     uint32_t IMM_LOWER_6 = 0x7E000000;
@@ -600,14 +634,14 @@ void handle_j_type(uint32_t addr, uint32_t instruction, char* result, uint8_t* u
     imm |= (rs2 & RS2_LOWER_1) >> 9;
     imm |= func3 | rs1;
 
-    if(imm & 0x80000000 == 0x80000000){
+    if((imm & 0x80000000) == 0x80000000){
         imm |= 0xFFFFF000;
     }
 
     imm += addr;
     convert_imm_to_str(imm, "%#x", result, used, buf_size);
 
-    char* sym = symbols_value_to_sym(symbols, addr);
+    const char* sym = symbols_value_to_sym(symbols, addr);
     if(sym != NULL){
         sprintf(result + *used, " <%s>", sym);
     }
