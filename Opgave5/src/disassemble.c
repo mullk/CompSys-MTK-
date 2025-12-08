@@ -68,7 +68,7 @@
 #define REGISTER_COMMA_FALSE 0
 #define REGISTER_RD  0
 #define REGISTER_RS1 1
-#define REGISTER_RS2 2 //ebreak, fence, fence.i, CSRRW, CSRRS, CSRRC, CSRRWI, CSRRSI og CSRRCI.
+#define REGISTER_RS2 2
 
 void add_mnemonic(char* mnemonic, char* result, size_t* used, size_t buf_size);
 void unknown_instruction(char* result, size_t buf_size);
