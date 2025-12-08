@@ -79,7 +79,7 @@ void handle_i_type_load(uint32_t instruction, char* result, uint8_t* used, size_
 void handle_s_type(uint32_t instruction, char* result, uint8_t* used, size_t buf_size);
 void handle_b_type(uint32_t addr, uint32_t instruction, char* result, uint8_t* used, size_t buf_size);
 void handle_u_type(uint32_t instruction, char* result, uint8_t* used, size_t buf_size);
-void handle_j_type(uint32_t addr, uint32_t instruction, char* result, uint8_t* used, size_t buf_size);
+void handle_j_type(uint32_t addr, uint32_t instruction, char* result, uint8_t* used, size_t buf_size, struct symbols* symbols);
 
 void disassemble(uint32_t addr, uint32_t instruction, char* result, size_t buf_size, struct symbols* symbols){
     uint8_t used = 0;
@@ -99,7 +99,7 @@ void disassemble(uint32_t addr, uint32_t instruction, char* result, size_t buf_s
         handle_u_type(instruction, result, &used, buf_size);
     }else if(opcode == OPCODE_JAL){
         add_mnemonic("JAL", result, &used, buf_size);
-        handle_j_type(addr, instruction, result, &used, buf_size);
+        handle_j_type(addr, instruction, result, &used, buf_size, symbols);
     }else if(opcode == OPCODE_JALR){
         uint32_t func3 = (instruction & FUNC3_MASK) >> 12;
         switch (func3){
@@ -331,6 +331,7 @@ void disassemble(uint32_t addr, uint32_t instruction, char* result, size_t buf_s
     }else if(opcode == OPCODE_ECALL){
         add_mnemonic("ECALL", result, &used, buf_size);
     }
+    assert(strcmp(result, ""));
 }
 
 void convert_registry(uint32_t reg_code, char* reg){
@@ -520,21 +521,21 @@ void handle_i_type_imm(uint32_t instruction, char* result, uint8_t* used, size_t
 void handle_i_type_load(uint32_t instruction, char* result, uint8_t* used, size_t buf_size){
     decode_registre(instruction, REGISTER_RD, REGISTER_COMMA_TRUE, result, used, buf_size);
     
-        uint32_t imm = 0;
+    uint32_t imm = 0;
     i_type_immediat_decode(instruction, &imm);
     convert_imm_to_str(imm, "%i", result, used, buf_size);
 
     result[*used] = '(';
     (*used)++;
     decode_registre(instruction, REGISTER_RS1, REGISTER_COMMA_FALSE, result, used, buf_size);
-result[*used] = ')';
+    result[*used] = ')';
     (*used)++;
 }
 
 void handle_s_type(uint32_t instruction, char* result, uint8_t* used, size_t buf_size){
     decode_registre(instruction, REGISTER_RS2, REGISTER_COMMA_TRUE, result, used, buf_size);
 
-        uint32_t imm =(instruction & S_TYPE_IMM_MASK) >> 21;
+    uint32_t imm =(instruction & S_TYPE_IMM_MASK) >> 21;
     uint32_t imm_rd = (instruction & RD_MASK) >> 7;
     imm = imm | imm_rd;
     if((imm & 0x800) == 0x800){
@@ -546,7 +547,7 @@ void handle_s_type(uint32_t instruction, char* result, uint8_t* used, size_t buf
     result[*used] = '(';
     (*used)++;
     decode_registre(instruction, REGISTER_RS1, REGISTER_COMMA_FALSE, result, used, buf_size);
-result[*used] = ')';
+    result[*used] = ')';
     (*used)++;
 }
 
@@ -580,13 +581,13 @@ void handle_u_type(uint32_t instruction, char* result, uint8_t* used, size_t buf
     sprintf(&result[*used], "%#x", imm);
 }
 
-void handle_j_type(uint32_t addr, uint32_t instruction, char* result, uint8_t* used, size_t buf_size){
-uint32_t RS2_UPPER_3 = 0x1E00000;
+void handle_j_type(uint32_t addr, uint32_t instruction, char* result, uint8_t* used, size_t buf_size, struct symbols* symbols){
+    uint32_t RS2_UPPER_3 = 0x1E00000;
     uint32_t RS2_LOWER_1 = 0x100000;
     uint32_t IMM_LOWER_6 = 0x7E000000;
 
     decode_registre(instruction, REGISTER_RD, REGISTER_COMMA_TRUE, result, used, buf_size);
-    
+
     uint32_t func3 = instruction & FUNC3_MASK;
     uint32_t rs1 = instruction & RS1_MASK;
     uint32_t rs2 = instruction & RS2_MASK;
@@ -604,6 +605,10 @@ uint32_t RS2_UPPER_3 = 0x1E00000;
     }
 
     imm += addr;
+    convert_imm_to_str(imm, "%#x", result, used, buf_size);
 
-    sprintf(&result[*used], "%#x", imm);
+    char* sym = symbols_value_to_sym(symbols, addr);
+    if(sym != NULL){
+        sprintf(result + *used, " <%s>", sym);
+    }
 }
