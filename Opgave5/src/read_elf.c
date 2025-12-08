@@ -6,10 +6,22 @@
 #include <string.h>
 #include "elf.h"
 
+#include <errno.h>
+#include <unistd.h>
+
 int read_elf(struct memory* mem, struct program_info* info, const char *filename, FILE *log_file) {
+    char cwd[100];
+    memset(cwd, '\0', 100);
+    getcwd(cwd, 100);
+
+    printf("Trying to open %s/%s\n", cwd, filename);
     FILE *file = fopen(filename, "rb");
     if (!file) {
-        fprintf(log_file, "Error opening file");
+        if(log_file){
+            fprintf(log_file, "Error opening file");
+        }else{
+            printf("Error opening file: %s\n", strerror(errno));
+        }
         return -1;
     }
 
@@ -189,7 +201,7 @@ struct symbols* symbols_read_from_elf(const char *filename) {
     }
 
     // Print symbols
-    /* printf("Symbols:\n");
+    printf("Symbols:\n");
     for (int i = 0; i < symbols->num_symbols; i++) {
         const char *name = &symbols->strtab[symbols->symbols[i].st_name];
         printf("Name: %-50s Address: 0x%-8x Size: %3d Type: %2d Binding: %2d\n",
@@ -199,7 +211,7 @@ struct symbols* symbols_read_from_elf(const char *filename) {
                ELF32_ST_TYPE(symbols->symbols[i].st_info),
                ELF32_ST_BIND(symbols->symbols[i].st_info));
     }
-    */
+    
     // Free allocated memory
     // free(strtab);
     // free(symbols);
@@ -212,6 +224,7 @@ struct symbols* symbols_read_from_elf(const char *filename) {
 const char* symbols_value_to_sym(struct symbols* symbols, unsigned int value) 
 {
     for (int i = 0; i < symbols->num_symbols; i++) {
+//        printf("%u == %u = %u, %c\n", symbols->symbols[i].st_value, value, symbols->symbols[i].st_value == value, ELF32_ST_BIND(symbols->symbols[i].st_info));
         if (symbols->symbols[i].st_value == value && ELF32_ST_BIND(symbols->symbols[i].st_info)) {
             return &symbols->strtab[symbols->symbols[i].st_name];
         }
