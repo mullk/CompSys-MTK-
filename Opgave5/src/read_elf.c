@@ -201,7 +201,7 @@ struct symbols* symbols_read_from_elf(const char *filename) {
     }
 
     // Print symbols
-    printf("Symbols:\n");
+    /*printf("Symbols:\n");
     for (int i = 0; i < symbols->num_symbols; i++) {
         const char *name = &symbols->strtab[symbols->symbols[i].st_name];
         printf("Name: %-50s Address: 0x%-8x Size: %3d Type: %2d Binding: %2d\n",
@@ -210,7 +210,7 @@ struct symbols* symbols_read_from_elf(const char *filename) {
                symbols->symbols[i].st_size,
                ELF32_ST_TYPE(symbols->symbols[i].st_info),
                ELF32_ST_BIND(symbols->symbols[i].st_info));
-    }
+    }*/
     
     // Free allocated memory
     // free(strtab);
