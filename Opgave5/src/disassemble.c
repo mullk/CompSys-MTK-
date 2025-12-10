@@ -89,7 +89,7 @@ void disassemble(uint32_t addr, uint32_t instruction, char* result, size_t buf_s
 
     const char* sym = symbols_value_to_sym(symbols, addr);
     if(sym != NULL){
-        printf("\n%x <%s>:\n", addr, sym);
+        printf("\n%08x <%s>:\n", addr, sym);
     }
 
     uint32_t opcode = (instruction & OPCODE_MASK);
