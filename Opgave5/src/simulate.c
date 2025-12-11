@@ -3,6 +3,8 @@
 #include "read_elf.h"
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 // --- Hjælpefunktioner ------------------------------------------------------
 
@@ -75,13 +77,31 @@ int handle_ecall(int32_t regs[]) {
 }
 
 // --- Hovedsimulator ---------------------------------------------------------
-//Det skal ikke læses som en deklaration af en struct. De to første ord = return type declaration. 
+
 struct Stat simulate(struct memory *mem, int start_addr, FILE *log_file, struct symbols* symbols)
 {
     struct Stat st = {0};
     int32_t regs[32] = {0};
-
     uint32_t pc = (uint32_t)start_addr;
+
+    // --- Branch prediction status ------------------------------------------
+    long nt_errors = 0;
+    long btfnt_errors = 0;
+    #define BIMODAL_SIZES 4
+    const int bimodal_sizes[BIMODAL_SIZES] = {256, 1024, 4096, 16384};
+    long bimodal_errors[BIMODAL_SIZES] = {0};
+    long gshare_errors[BIMODAL_SIZES] = {0};
+    uint8_t *bimodal[BIMODAL_SIZES];
+    uint8_t *gshare[BIMODAL_SIZES];
+    for(int i=0;i<BIMODAL_SIZES;i++){
+        bimodal[i] = calloc(bimodal_sizes[i], sizeof(uint8_t));
+        gshare[i] = calloc(bimodal_sizes[i], sizeof(uint8_t));
+        memset(bimodal[i], 2, bimodal_sizes[i]);
+        memset(gshare[i], 2, bimodal_sizes[i]);
+    }
+    uint32_t ghr = 0;
+
+    long branch_count = 0; // tæller branch-instruktioner
 
     while (1) {
         uint32_t inst = (uint32_t)memory_rd_w(mem, pc);
@@ -98,9 +118,9 @@ struct Stat simulate(struct memory *mem, int start_addr, FILE *log_file, struct 
         int32_t v1 = regs[rs1];
         int32_t v2 = regs[rs2];
 
-        if (log_file) {
-            fprintf(log_file, "%08x : %08x\n", pc, inst);
-        }
+        int is_branch = 0;
+        int taken = 0;
+        int32_t branch_target = 0;
 
         // --- LUI / AUIPC ----------------------------------------------------
         if (opcode == 0x37) {                 // LUI
@@ -114,49 +134,92 @@ struct Stat simulate(struct memory *mem, int start_addr, FILE *log_file, struct 
         else if (opcode == 0x6F) {
             regs[rd] = pc + 4;
             next_pc = pc + imm_J(inst);
+            is_branch = 1;
+            taken = 1;
+            branch_target = next_pc;
+            branch_count++;
         }
 
         // --- JALR ------------------------------------------------------------
         else if (opcode == 0x67) {
             regs[rd] = pc + 4;
             next_pc = (v1 + imm_I(inst)) & ~1;
+            is_branch = 1;
+            taken = 1;
+            // Hvis taken =1, så er der foretaget et hop, ellers = 0 
+            branch_target = next_pc;
+            branch_count++;
         }
 
         // --- BRANCH ----------------------------------------------------------
         else if (opcode == 0x63) {
             int32_t imm = imm_B(inst);
-            if (f3 == 0 && v1 == v2) next_pc = pc + imm;           // beq
-            else if (f3 == 1 && v1 != v2) next_pc = pc + imm;      // bne
-            else if (f3 == 4 && v1 < v2)  next_pc = pc + imm;      // blt
-            else if (f3 == 5 && v1 >= v2) next_pc = pc + imm;      // bge
-            else if (f3 == 6 && (uint32_t)v1 < (uint32_t)v2)  next_pc = pc + imm; // bltu
-            else if (f3 == 7 && (uint32_t)v1 >= (uint32_t)v2) next_pc = pc + imm; // bgeu
+            branch_target = pc + imm;
+            branch_count++;
+            if (f3 == 0 && v1 == v2) next_pc = branch_target, taken = 1;           // beq
+            else if (f3 == 1 && v1 != v2) next_pc = branch_target, taken = 1;      // bne
+            else if (f3 == 4 && v1 < v2)  next_pc = branch_target, taken = 1;      // blt
+            else if (f3 == 5 && v1 >= v2) next_pc = branch_target, taken = 1;      // bge
+            else if (f3 == 6 && (uint32_t)v1 < (uint32_t)v2)  next_pc = branch_target, taken = 1; // bltu
+            else if (f3 == 7 && (uint32_t)v1 >= (uint32_t)v2)  next_pc = branch_target, taken = 1; // bgeu
+            is_branch = 1;
+        }
+
+        // --- Branch prediction ---------------------------------------------
+        if(is_branch){
+            // NT predictor
+            if(taken) nt_errors++;
+            // BTFNT predictor
+            int backward = (branch_target - pc) < 0;
+            if(taken != (backward ? 1 : 0)) btfnt_errors++;
+
+            // Bimodal and gShare predictors
+            for(int i=0;i<BIMODAL_SIZES;i++){
+                int idx = (pc >> 2) & (bimodal_sizes[i]-1);
+                int pred = bimodal[i][idx]>=2?1:0;
+                if(pred != taken) bimodal_errors[i]++;
+                if(taken){ if(bimodal[i][idx]<3) bimodal[i][idx]++; } 
+                else { if(bimodal[i][idx]>0) bimodal[i][idx]--; }
+
+                idx = ((pc >> 2) ^ ghr) & (bimodal_sizes[i]-1);
+                pred = gshare[i][idx]>=2?1:0;
+                if(pred != taken) gshare_errors[i]++;
+                if(taken){ if(gshare[i][idx]<3) gshare[i][idx]++; } 
+                else { if(gshare[i][idx]>0) gshare[i][idx]--; }
+            }
+            ghr = ((ghr << 1) | (taken?1:0)) & 0xFFFF;
+        }
+
+        // --- Logging --------------------------------------------------------
+        if(log_file){
+            fprintf(log_file, "%5ld => %08x : %08x", st.insns, pc, inst);
+            if(is_branch) fprintf(log_file, "{%s}", taken ? "T" : "NT");
+            fprintf(log_file, "\n");
         }
 
         // --- LOAD ------------------------------------------------------------
-        else if (opcode == 0x03) {
+        if(opcode == 0x03){
             int32_t addr = v1 + imm_I(inst);
-
-            if      (f3 == 0)  regs[rd] = (int8_t) memory_rd_b(mem, addr);
-            else if (f3 == 4)  regs[rd] = (uint8_t) memory_rd_b(mem, addr);
-            else if (f3 == 1)  regs[rd] = (int16_t) memory_rd_h(mem, addr);
-            else if (f3 == 5)  regs[rd] = (uint16_t) memory_rd_h(mem, addr);
-            else if (f3 == 2)  regs[rd] = memory_rd_w(mem, addr);
+            if      (f3 == 0) regs[rd] = (int8_t) memory_rd_b(mem, addr);
+            else if (f3 == 4) regs[rd] = (uint8_t) memory_rd_b(mem, addr);
+            else if (f3 == 1) regs[rd] = (int16_t) memory_rd_h(mem, addr);
+            else if (f3 == 5) regs[rd] = (uint16_t) memory_rd_h(mem, addr);
+            else if (f3 == 2) regs[rd] = memory_rd_w(mem, addr);
+            if(log_file && rd != 0) fprintf(log_file, "R[%2d] <- %x\n", rd, regs[rd]);
         }
 
         // --- STORE -----------------------------------------------------------
-        else if (opcode == 0x23) {
+        else if(opcode == 0x23){
             int32_t addr = v1 + imm_S(inst);
-
             if      (f3 == 0) memory_wr_b(mem, addr, v2);
             else if (f3 == 1) memory_wr_h(mem, addr, v2);
             else if (f3 == 2) memory_wr_w(mem, addr, v2);
+            if(log_file) fprintf(log_file, "%08x <- %x\n", addr, v2);
         }
 
-        // --- I-TYPE ALU ------------------------------------------------------
+         // --- I-TYPE ALU ------------------------------------------------------
         else if (opcode == 0x13) {
             int32_t imm = imm_I(inst);
-
             if      (f3 == 0) regs[rd] = v1 + imm;     // addi
             else if (f3 == 2) regs[rd] = v1 < imm;      // slti
             else if (f3 == 3) regs[rd] = (uint32_t)v1 < (uint32_t)imm; // sltiu
@@ -214,17 +277,28 @@ struct Stat simulate(struct memory *mem, int start_addr, FILE *log_file, struct 
         }
 
         // --- ECALL -----------------------------------------------------------
-        else if (opcode == 0x73) {
-            if (handle_ecall(regs))
-                return st;
+        else if(opcode == 0x73){
+            if(handle_ecall(regs)) break;
         }
 
         // --- Opdater PC ------------------------------------------------------
         pc = next_pc;
-
-        // x0 skal altid være 0
         regs[0] = 0;
     }
+
+    // --- Print statements --------------------------------------------------
+    printf("Simulated %ld instructions\n", st.insns);
+    printf("Kørte Branches: %ld\n", branch_count);
+    printf("NT fejl: %ld\n", nt_errors);
+    printf("BTFNT fejl: %ld\n", btfnt_errors);
+    for(int i=0;i<BIMODAL_SIZES;i++) 
+        printf("Bimodal[%d] errors: %ld\n", 
+        bimodal_sizes[i], bimodal_errors[i]);
+    for(int i=0;i<BIMODAL_SIZES;i++) 
+        printf("gShare[%d] errors: %ld\n", 
+        bimodal_sizes[i], gshare_errors[i]);
+    for(int i=0;i<BIMODAL_SIZES;i++)
+        { free(bimodal[i]); free(gshare[i]); }
 
     return st;
 }
