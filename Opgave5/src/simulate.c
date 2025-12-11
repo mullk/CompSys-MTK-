@@ -177,14 +177,14 @@ struct Stat simulate(struct memory *mem, int start_addr, FILE *log_file, struct 
             // Bimodal and gShare predictors
             for(int i=0;i<BIMODAL_SIZES;i++){
                 int idx = (pc >> 2) & (bimodal_sizes[i]-1);
-                int pred = bimodal[i][idx]>=2?1:0;
-                if(pred != taken) bimodal_errors[i]++;
+                int predicted = bimodal[i][idx]>=2?1:0;
+                if(predicted != taken) bimodal_errors[i]++;
                 if(taken){ if(bimodal[i][idx]<3) bimodal[i][idx]++; } 
                 else { if(bimodal[i][idx]>0) bimodal[i][idx]--; }
 
                 idx = ((pc >> 2) ^ ghr) & (bimodal_sizes[i]-1);
-                pred = gshare[i][idx]>=2?1:0;
-                if(pred != taken) gshare_errors[i]++;
+                predicted = gshare[i][idx]>=2?1:0;
+                if(predicted != taken) gshare_errors[i]++;
                 if(taken){ if(gshare[i][idx]<3) gshare[i][idx]++; } 
                 else { if(gshare[i][idx]>0) gshare[i][idx]--; }
             }
