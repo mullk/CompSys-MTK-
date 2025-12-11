@@ -93,12 +93,13 @@ struct Stat simulate(struct memory *mem, int start_addr, FILE *log_file, struct 
     long gshare_errors[BIMODAL_SIZES] = {0};
     uint8_t *bimodal[BIMODAL_SIZES];
     uint8_t *gshare[BIMODAL_SIZES];
-    for(int i=0;i<BIMODAL_SIZES;i++){
-        bimodal[i] = calloc(bimodal_sizes[i], sizeof(uint8_t));
-        gshare[i] = calloc(bimodal_sizes[i], sizeof(uint8_t));
+    for(int i = 0; i < BIMODAL_SIZES; i++) {
+        bimodal[i] = malloc(bimodal_sizes[i] * sizeof(uint8_t));
+        gshare[i] = malloc(bimodal_sizes[i] * sizeof(uint8_t));
         memset(bimodal[i], 2, bimodal_sizes[i]);
         memset(gshare[i], 2, bimodal_sizes[i]);
     }
+
     uint32_t ghr = 0;
 
     long branch_count = 0; // tæller branch-instruktioner
@@ -146,7 +147,7 @@ struct Stat simulate(struct memory *mem, int start_addr, FILE *log_file, struct 
             next_pc = (v1 + imm_I(inst)) & ~1;
             is_branch = 1;
             taken = 1;
-            // Hvis taken =1, så er der foretaget et hop, ellers = 0 
+            // Hvis taken =1, så er der foretaget et hop, ellers hvis ikke = 0 
             branch_target = next_pc;
             branch_count++;
         }
@@ -289,8 +290,8 @@ struct Stat simulate(struct memory *mem, int start_addr, FILE *log_file, struct 
     // --- Print statements --------------------------------------------------
     printf("Simulated %ld instructions\n", st.insns);
     printf("Kørte Branches: %ld\n", branch_count);
-    printf("NT fejl: %ld\n", nt_errors);
-    printf("BTFNT fejl: %ld\n", btfnt_errors);
+    printf("NT errors: %ld\n", nt_errors);
+    printf("BTFNT errors: %ld\n", btfnt_errors);
     for(int i=0;i<BIMODAL_SIZES;i++) 
         printf("Bimodal[%d] errors: %ld\n", 
         bimodal_sizes[i], bimodal_errors[i]);
