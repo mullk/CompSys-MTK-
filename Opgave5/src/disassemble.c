@@ -534,14 +534,6 @@ void handle_i_type(uint32_t instruction, char* result, size_t* used, size_t buf_
     int8_t overriden = 0;
     
     decode_registre(instruction, REGISTER_RD, 1, result, used, buf_size);
-
-    if(strcmp(result + *used - 5, "zero,") == 0){
-        memset(result, '\0', buf_size);
-        *used = 0;
-        add_mnemonic("ret",result, used, buf_size);
-        return;
-    }
-
     decode_registre(instruction, REGISTER_RS1, 1, result, used, buf_size);
     
     if(strcmp(result + *used - 5, "zero,") == 0){
@@ -558,9 +550,16 @@ void handle_i_type(uint32_t instruction, char* result, size_t* used, size_t buf_
     if(!overriden){
         size_t i = 0;
         if(imm == 0){
-            add_mnemonic("mv", result, &i, buf_size);
-            result[--(*used)] = '\0';
-            return;
+            if(strcmp(result + *used - 8, "zero,ra,") == 0){
+                memset(result, '\0', buf_size);
+                *used = 0;
+                add_mnemonic("ret",result, used, buf_size);
+                return;
+            }else if(strstr(result, "addi") == result){
+                add_mnemonic("mv", result, &i, buf_size);
+                result[--(*used)] = '\0';
+                return;
+            }
         }else if(imm == 255){
             add_mnemonic("zext.b", result, &i, buf_size);
             result[--(*used)] = '\0';
