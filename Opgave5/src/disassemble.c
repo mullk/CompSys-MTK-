@@ -531,11 +531,47 @@ void convert_imm_to_str(uint32_t imm, char* form, char* result, size_t* used, si
 }
 
 void handle_i_type(uint32_t instruction, char* result, size_t* used, size_t buf_size){
+    int8_t overriden = 0;
+    
     decode_registre(instruction, REGISTER_RD, 1, result, used, buf_size);
+
+    if(strcmp(result + *used - 5, "zero,") == 0){
+        memset(result, '\0', buf_size);
+        *used = 0;
+        add_mnemonic("ret",result, used, buf_size);
+        return;
+    }
+
     decode_registre(instruction, REGISTER_RS1, 1, result, used, buf_size);
 
-    uint32_t imm = 0;
+    if(strcmp(result + *used - 5, "zero,") == 0){
+        memset(result, '\0', buf_size);
+        *used = 0;
+        add_mnemonic("li",result, used, buf_size);
+        decode_registre(instruction, REGISTER_RD, 1, result, used, buf_size);
+        overriden = 1;
+    }
+
+    int32_t imm = 0;
     i_type_immediat_decode(instruction, &imm);
+
+    if(!overriden){
+        size_t i = 0;
+        if(imm == 0){
+            add_mnemonic("mv", result, &i, buf_size);
+            result[--(*used)] = '\0';
+            return;
+        }else if(imm == 255){
+            add_mnemonic("zext.b", result, &i, buf_size);
+            result[--(*used)] = '\0';
+            return;
+        }else if(strstr(result, "xori") == result && imm == -1){
+            add_mnemonic("not", result, &i, buf_size);
+            result[--(*used)] = '\0';
+            return;
+        }
+    }
+
     convert_imm_to_str(imm, "%i", result, used, buf_size);
 }
 void handle_i_type_shift(uint32_t instruction, char* result, size_t* used, size_t buf_size){
@@ -549,6 +585,14 @@ void handle_i_type_shift(uint32_t instruction, char* result, size_t* used, size_
 void handle_i_type_imm(uint32_t instruction, char* result, size_t* used, size_t buf_size){
     decode_registre(instruction, REGISTER_RD, REGISTER_COMMA_TRUE, result, used, buf_size);
     decode_registre(instruction, REGISTER_RS1, REGISTER_COMMA_TRUE, result, used, buf_size);
+
+    if(strcmp(result + *used - 5, "zero,") == 0){
+        size_t i = 0;
+        add_mnemonic("neg", result, &i, buf_size);
+        (*used) -= 5;
+        memset(result + *used, '\0', 5);
+    }
+
     decode_registre(instruction, REGISTER_RS2, REGISTER_COMMA_FALSE, result, used, buf_size);
 }
 
@@ -591,7 +635,32 @@ void handle_b_type(uint32_t addr, uint32_t instruction, char* result, size_t* us
     uint32_t IMM_LOWER_6 = 0x7E000000;
 
     decode_registre(instruction, REGISTER_RS1, REGISTER_COMMA_TRUE, result, used, buf_size);
+    
+    if(strcmp(result + *used - 5, "zero,") == 0){
+        size_t i = 0;
+        if(strstr(result, "bge") == result){
+            add_mnemonic("blez", result, &i, buf_size);
+        }else if(strstr(result, "blt") == result){
+            add_mnemonic("bgtz", result, &i, buf_size);
+        }
+        (*used) -= 5;
+    }
+    
     decode_registre(instruction, REGISTER_RS2, REGISTER_COMMA_TRUE, result, used, buf_size);
+    
+    if(strcmp(result + *used - 5, "zero,") == 0){
+        size_t i = 0;
+        if(strstr(result, "beq") == result){
+            add_mnemonic("beqz", result, &i, buf_size);
+        }else if(strstr(result, "bne") == result){
+            add_mnemonic("bnez", result, &i, buf_size);
+        }else if(strstr(result, "bge") == result){
+            add_mnemonic("bgez", result, &i, buf_size);
+        }else if(strstr(result, "blt") == result){
+            add_mnemonic("bltz", result, &i, buf_size);
+        }
+        (*used) -= 5;
+    }
     
     uint32_t imm_inst = (instruction & S_TYPE_IMM_MASK);
     uint32_t rd = (instruction & RD_MASK);
@@ -621,6 +690,11 @@ void handle_j_type(uint32_t addr, uint32_t instruction, char* result, size_t* us
     uint32_t IMM_LOWER_6 = 0x7E000000;
 
     decode_registre(instruction, REGISTER_RD, REGISTER_COMMA_TRUE, result, used, buf_size);
+    if(strcmp(result + *used - 5, "zero,") == 0){
+        result[1] = ' ';
+        result[2] = ' ';
+        (*used) -= 5;
+    }
 
     uint32_t func3 = instruction & FUNC3_MASK;
     uint32_t rs1 = instruction & RS1_MASK;
