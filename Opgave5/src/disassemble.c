@@ -94,19 +94,19 @@ void disassemble(uint32_t addr, uint32_t instruction, char* result, size_t buf_s
 
     uint32_t opcode = (instruction & OPCODE_MASK);
     if(opcode == OPCODE_LUI){
-        add_mnemonic("LUI", result, &used, buf_size);
+        add_mnemonic("lui", result, &used, buf_size);
         handle_u_type(instruction, result, &used, buf_size);
     }else if(opcode == OPCODE_AUIPC){
-        add_mnemonic("AUIPC", result, &used, buf_size);
+        add_mnemonic("auipc", result, &used, buf_size);
         handle_u_type(instruction, result, &used, buf_size);
     }else if(opcode == OPCODE_JAL){
-        add_mnemonic("JAL", result, &used, buf_size);
+        add_mnemonic("jal", result, &used, buf_size);
         handle_j_type(addr, instruction, result, &used, buf_size, symbols);
     }else if(opcode == OPCODE_JALR){
         uint32_t func3 = (instruction & FUNC3_MASK) >> 12;
         switch (func3){
         case FUNC3_JALR:
-            add_mnemonic("JALR", result, &used, buf_size);
+            add_mnemonic("jalr", result, &used, buf_size);
             handle_i_type(instruction, result, &used, buf_size);
             break;
         default:
@@ -117,27 +117,27 @@ void disassemble(uint32_t addr, uint32_t instruction, char* result, size_t buf_s
         uint32_t func3 = (instruction & FUNC3_MASK) >> 12;
         switch (func3){
             case FUNC3_BEQ:
-                add_mnemonic("BEQ", result, &used, buf_size);
+                add_mnemonic("beq", result, &used, buf_size);
                 handle_b_type(addr, instruction, result, &used, buf_size);
                 break;
             case FUNC3_BNE:
-                add_mnemonic("BNE", result, &used, buf_size);
+                add_mnemonic("bne", result, &used, buf_size);
                 handle_b_type(addr, instruction, result, &used, buf_size);
                 break;
             case FUNC3_BLT:
-                add_mnemonic("BLT", result, &used, buf_size);
+                add_mnemonic("blt", result, &used, buf_size);
                 handle_b_type(addr, instruction, result, &used, buf_size);
                 break;
             case FUNC3_BGE:
-                add_mnemonic("BGE", result, &used, buf_size);
+                add_mnemonic("bge", result, &used, buf_size);
                 handle_b_type(addr, instruction, result, &used, buf_size);
                 break;
             case FUNC3_BLTU:
-                add_mnemonic("BLTU", result, &used, buf_size);
+                add_mnemonic("bltu", result, &used, buf_size);
                 handle_b_type(addr, instruction, result, &used, buf_size);
                 break;
             case FUNC3_BGEU:
-                add_mnemonic("BGEU", result, &used, buf_size);
+                add_mnemonic("bgeu", result, &used, buf_size);
                 handle_b_type(addr, instruction, result, &used, buf_size);
                 break;
             default:
@@ -148,23 +148,23 @@ void disassemble(uint32_t addr, uint32_t instruction, char* result, size_t buf_s
         uint32_t func3 = (instruction & FUNC3_MASK) >> 12;
         switch (func3){
             case FUNC3_LB:
-                add_mnemonic("LB", result, &used, buf_size);
+                add_mnemonic("lb", result, &used, buf_size);
                 handle_i_type_load(instruction, result, &used, buf_size);
                 break;
             case FUNC3_LH:
-                add_mnemonic("LH", result, &used, buf_size);
+                add_mnemonic("lh", result, &used, buf_size);
                 handle_i_type_load(instruction, result, &used, buf_size);
                 break;
             case FUNC3_LW:
-                add_mnemonic("LW", result, &used, buf_size);
+                add_mnemonic("lw", result, &used, buf_size);
                 handle_i_type_load(instruction, result, &used, buf_size);
                 break;
             case FUNC3_LBU:
-                add_mnemonic("LBU", result, &used, buf_size);
+                add_mnemonic("lbu", result, &used, buf_size);
                 handle_i_type_load(instruction, result, &used, buf_size);
                 break;
             case FUNC3_LHU:
-                add_mnemonic("LHU", result, &used, buf_size);
+                add_mnemonic("lhu", result, &used, buf_size);
                 handle_i_type_load(instruction, result, &used, buf_size);
                 break;
             default:
@@ -175,15 +175,15 @@ void disassemble(uint32_t addr, uint32_t instruction, char* result, size_t buf_s
         uint32_t func3 = (instruction & FUNC3_MASK) >> 12;
         switch (func3){
             case FUNC3_SB:
-                add_mnemonic("SB", result, &used, buf_size);
+                add_mnemonic("sb", result, &used, buf_size);
                 handle_s_type(instruction, result, &used, buf_size);
                 break;
             case FUNC3_SH:
-                add_mnemonic("SH", result, &used, buf_size);
+                add_mnemonic("sh", result, &used, buf_size);
                 handle_s_type(instruction, result, &used, buf_size);
                 break;
             case FUNC3_SW:
-                add_mnemonic("SW", result, &used, buf_size);
+                add_mnemonic("sw", result, &used, buf_size);
                 handle_s_type(instruction, result, &used, buf_size);
                 break;
             default:
@@ -194,39 +194,39 @@ void disassemble(uint32_t addr, uint32_t instruction, char* result, size_t buf_s
         uint32_t func3 = (instruction & FUNC3_MASK) >> 12;
         switch (func3){
             case FUNC3_ADDI:
-                add_mnemonic("ADDI", result, &used, buf_size);
+                add_mnemonic("addi", result, &used, buf_size);
                 handle_i_type(instruction, result, &used, buf_size);
                 break;
             case FUNC3_SLTI:
-                add_mnemonic("SLTI", result, &used, buf_size);
+                add_mnemonic("slti", result, &used, buf_size);
                 handle_i_type(instruction, result, &used, buf_size);
                 break;
             case FUNC3_SLTIU:
-                add_mnemonic("SLTIU", result, &used, buf_size);
+                add_mnemonic("sltiu", result, &used, buf_size);
                 handle_i_type(instruction, result, &used, buf_size);
                 break;
             case FUNC3_XORI:
-                add_mnemonic("XORI", result, &used, buf_size);
+                add_mnemonic("xori", result, &used, buf_size);
                 handle_i_type(instruction, result, &used, buf_size);
                 break;
             case FUNC3_ORI:
-                add_mnemonic("ORI", result, &used, buf_size);
+                add_mnemonic("ori", result, &used, buf_size);
                 handle_i_type(instruction, result, &used, buf_size);
                 break;
             case FUNC3_ANDI:
-                add_mnemonic("ANDI", result, &used, buf_size);
+                add_mnemonic("andi", result, &used, buf_size);
                 handle_i_type(instruction, result, &used, buf_size);
                 break;
             case FUNC3_SLLI:
-                add_mnemonic("SSLI", result, &used, buf_size);
+                add_mnemonic("slli", result, &used, buf_size);
                 handle_i_type_shift(instruction, result, &used, buf_size);
                 break;
             case FUNC3_SRLI_SRAI:{
                 uint32_t logical_or_arithmetic = instruction & 0x40000000;
                 if(logical_or_arithmetic == 0x40000000){
-                    add_mnemonic("SRAI", result, &used, buf_size);
+                    add_mnemonic("srai", result, &used, buf_size);
                 }else{
-                    add_mnemonic("SRLI", result, &used, buf_size);
+                    add_mnemonic("srli", result, &used, buf_size);
                 }
                 handle_i_type_shift(instruction, result, &used, buf_size);
                 break;
@@ -241,13 +241,13 @@ void disassemble(uint32_t addr, uint32_t instruction, char* result, size_t buf_s
             case FUNC3_ADD_SUB_MUL:{
                 uint32_t add_mul_or_sub = instruction & 0x40000000;
                 if(add_mul_or_sub == 0x40000000){
-                    add_mnemonic("SUB", result, &used, buf_size);
+                    add_mnemonic("sub", result, &used, buf_size);
                 }else{
                     uint32_t add_or_mul = instruction & 0x2000000;
                     if(add_or_mul == 0x2000000){
-                        add_mnemonic("MUL", result, &used, buf_size);
+                        add_mnemonic("mul", result, &used, buf_size);
                     }else{
-                        add_mnemonic("ADD", result, &used, buf_size);
+                        add_mnemonic("add", result, &used, buf_size);
                     }
                 }
                 handle_i_type_imm(instruction, result, &used, buf_size);
@@ -256,9 +256,9 @@ void disassemble(uint32_t addr, uint32_t instruction, char* result, size_t buf_s
             case FUNC3_SLL_MULH:{
                 uint32_t sll_or_mulh = instruction & 0x2000000;
                 if(sll_or_mulh == 0x2000000){
-                    add_mnemonic("MULH", result, &used, buf_size);
+                    add_mnemonic("mulh", result, &used, buf_size);
                 }else{
-                    add_mnemonic("SLL", result, &used, buf_size);
+                    add_mnemonic("sll", result, &used, buf_size);
                 }
                 handle_i_type_imm(instruction, result, &used, buf_size);
                 break;
@@ -266,9 +266,9 @@ void disassemble(uint32_t addr, uint32_t instruction, char* result, size_t buf_s
             case FUNC3_SLT_MULHSU:{
                 uint32_t slt_or_mulhsu =  instruction & 0x2000000;
                 if(slt_or_mulhsu == 0x2000000){
-                    add_mnemonic("MULHSU", result, &used, buf_size);
+                    add_mnemonic("mulhsu", result, &used, buf_size);
                 }else{
-                    add_mnemonic("SLT", result, &used, buf_size);
+                    add_mnemonic("slt", result, &used, buf_size);
                 }
                 handle_i_type_imm(instruction, result, &used, buf_size);
                 break;
@@ -276,9 +276,9 @@ void disassemble(uint32_t addr, uint32_t instruction, char* result, size_t buf_s
             case FUNC3_SLTU_MULHU:{
                 uint32_t sltu_or_mulhu =  instruction & 0x2000000;
                 if(sltu_or_mulhu == 0x2000000){
-                    add_mnemonic("MULHU", result, &used, buf_size);
+                    add_mnemonic("mulhu", result, &used, buf_size);
                 }else{
-                    add_mnemonic("SLTU", result, &used, buf_size);
+                    add_mnemonic("sltu", result, &used, buf_size);
                 }
                 handle_i_type_imm(instruction, result, &used, buf_size);
                 break;
@@ -286,9 +286,9 @@ void disassemble(uint32_t addr, uint32_t instruction, char* result, size_t buf_s
             case FUNC3_XOR_DIV:{
                 uint32_t xor_or_div = instruction & 0x2000000;
                 if(xor_or_div == 0x2000000){
-                    add_mnemonic("DIV", result, &used, buf_size);
+                    add_mnemonic("div", result, &used, buf_size);
                 }else{
-                    add_mnemonic("XOR", result, &used, buf_size);
+                    add_mnemonic("xor", result, &used, buf_size);
                 }
                 handle_i_type_imm(instruction, result, &used, buf_size);
                 break;
@@ -296,13 +296,13 @@ void disassemble(uint32_t addr, uint32_t instruction, char* result, size_t buf_s
             case FUNC3_SRL_SRA_DIVU:{
                 uint32_t logical_divu_or_arithmetic = instruction & 0x40000000;
                 if(logical_divu_or_arithmetic == 0x40000000){
-                    add_mnemonic("SRA", result, &used, buf_size);
+                    add_mnemonic("sra", result, &used, buf_size);
                 }else{
                     uint32_t logical_or_divu = instruction & 0x2000000;
                     if(logical_or_divu == 0x2000000){
-                    add_mnemonic("DIVU", result, &used, buf_size);
+                    add_mnemonic("divu", result, &used, buf_size);
                     }else{
-                        add_mnemonic("SRL", result, &used, buf_size);
+                        add_mnemonic("srl", result, &used, buf_size);
                     }
                 }
                 handle_i_type_imm(instruction, result, &used, buf_size);
@@ -311,9 +311,9 @@ void disassemble(uint32_t addr, uint32_t instruction, char* result, size_t buf_s
             case FUNC3_OR_REM:{
                 uint32_t or_or_rem = instruction & 0x2000000;
                 if(or_or_rem == 0x2000000){
-                    add_mnemonic("REM", result, &used, buf_size);
+                    add_mnemonic("rem", result, &used, buf_size);
                 }else{
-                    add_mnemonic("OR", result, &used, buf_size);
+                    add_mnemonic("or", result, &used, buf_size);
                 }
                 handle_i_type_imm(instruction, result, &used, buf_size);
                 break;
@@ -321,9 +321,9 @@ void disassemble(uint32_t addr, uint32_t instruction, char* result, size_t buf_s
             case FUNC3_AND_REMU:{
                 uint32_t and_or_remu = instruction & 0x2000000;
                 if(and_or_remu == 0x2000000){
-                    add_mnemonic("REMU", result, &used, buf_size);
+                    add_mnemonic("remu", result, &used, buf_size);
                 }else{
-                    add_mnemonic("AND", result, &used, buf_size);
+                    add_mnemonic("and", result, &used, buf_size);
                 }
                 handle_i_type_imm(instruction, result, &used, buf_size);
                 break;
@@ -333,7 +333,7 @@ void disassemble(uint32_t addr, uint32_t instruction, char* result, size_t buf_s
                 return;
         }
     }else if(opcode == OPCODE_ECALL){
-        add_mnemonic("ECALL", result, &used, buf_size);
+        add_mnemonic("ecall", result, &used, buf_size);
     }
     if(*result == 0){
         unknown_instruction(result, buf_size);
