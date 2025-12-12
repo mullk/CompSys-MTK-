@@ -225,7 +225,7 @@ const char* symbols_value_to_sym(struct symbols* symbols, unsigned int value)
 {
     for (int i = 0; i < symbols->num_symbols; i++) {
 //        printf("%u == %u = %u, %c\n", symbols->symbols[i].st_value, value, symbols->symbols[i].st_value == value, ELF32_ST_BIND(symbols->symbols[i].st_info));
-        if (symbols->symbols[i].st_value == value && (ELF32_ST_BIND(symbols->symbols[i].st_info) || ELF32_ST_BIND(symbols->symbols[i].st_info) == 0 && ELF32_ST_TYPE(symbols->symbols[i].st_info) == 2)) {
+        if (symbols->symbols[i].st_value == value && (ELF32_ST_BIND(symbols->symbols[i].st_info) || (ELF32_ST_BIND(symbols->symbols[i].st_info) == 0 && ELF32_ST_TYPE(symbols->symbols[i].st_info) == 2))) {
             return &symbols->strtab[symbols->symbols[i].st_name];
         }
     }

@@ -507,7 +507,7 @@ void decode_registre(uint32_t instruction, uint8_t registr, uint8_t comma, char*
     }
 }
 
-void i_type_immediat_decode(uint32_t instruction, uint32_t* imm){
+void i_type_immediat_decode(uint32_t instruction, int32_t* imm){
     uint32_t imm_mask = (instruction & I_TYPE_IMM_MASK);
     *imm = imm_mask >> 20;
     if((*imm & 0x800) == 0x800){
@@ -599,7 +599,7 @@ void handle_i_type_imm(uint32_t instruction, char* result, size_t* used, size_t 
 void handle_i_type_load(uint32_t instruction, char* result, size_t* used, size_t buf_size){
     decode_registre(instruction, REGISTER_RD, REGISTER_COMMA_TRUE, result, used, buf_size);
     
-    uint32_t imm = 0;
+    int32_t imm = 0;
     i_type_immediat_decode(instruction, &imm);
     convert_imm_to_str(imm, "%i", result, used, buf_size);
 
