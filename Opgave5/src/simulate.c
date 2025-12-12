@@ -171,7 +171,7 @@ struct Stat simulate(struct memory *mem, int start_addr, FILE *log_file, struct 
             // NT predictor
             if(taken) nt_errors++;
             // BTFNT predictor
-            int backward = (branch_target - pc) < 0;
+            int backward = (branch_target - (int32_t)pc) < 0;
             if(taken != (backward ? 1 : 0)) btfnt_errors++;
 
             // Bimodal and gShare predictors
