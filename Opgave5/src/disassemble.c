@@ -543,7 +543,7 @@ void handle_i_type(uint32_t instruction, char* result, size_t* used, size_t buf_
     }
 
     decode_registre(instruction, REGISTER_RS1, 1, result, used, buf_size);
-
+    
     if(strcmp(result + *used - 5, "zero,") == 0){
         memset(result, '\0', buf_size);
         *used = 0;
@@ -578,7 +578,7 @@ void handle_i_type_shift(uint32_t instruction, char* result, size_t* used, size_
     decode_registre(instruction, REGISTER_RD, REGISTER_COMMA_TRUE, result, used, buf_size);
     decode_registre(instruction, REGISTER_RS1, REGISTER_COMMA_TRUE, result, used, buf_size);
 
-    uint32_t shift = (instruction & 0xF00000) >> 20;
+    uint32_t shift = (instruction & 0x1F00000) >> 20;
     sprintf(&result[*used], "%#x", shift);
 }
 
@@ -613,7 +613,7 @@ void handle_i_type_load(uint32_t instruction, char* result, size_t* used, size_t
 void handle_s_type(uint32_t instruction, char* result, size_t* used, size_t buf_size){
     decode_registre(instruction, REGISTER_RS2, REGISTER_COMMA_TRUE, result, used, buf_size);
 
-    uint32_t imm =(instruction & S_TYPE_IMM_MASK) >> 21;
+    uint32_t imm =(instruction & S_TYPE_IMM_MASK) >> 20;
     uint32_t imm_rd = (instruction & RD_MASK) >> 7;
     imm = imm | imm_rd;
     if((imm & 0x800) == 0x800){
@@ -661,7 +661,7 @@ void handle_b_type(uint32_t addr, uint32_t instruction, char* result, size_t* us
         }
         (*used) -= 5;
     }
-    
+
     uint32_t imm_inst = (instruction & S_TYPE_IMM_MASK);
     uint32_t rd = (instruction & RD_MASK);
 
@@ -670,12 +670,12 @@ void handle_b_type(uint32_t addr, uint32_t instruction, char* result, size_t* us
     imm |= (rd & RD_UPPER_3) >> 7;
     imm |= (imm_inst & IMM_LOWER_6) >> 20;
     imm |= (rd & RD_LOWER_1) << 4;
-    if((imm & 0x80000000) == 0x80000000){
+    if((instruction & 0x80000000) == 0x80000000){
         imm |= 0xFFFFF000;
     }
 
     imm += addr;
-    convert_imm_to_str(imm, "%#x", result, used, buf_size);
+    convert_imm_to_str(imm, "%x", result, used, buf_size);
 }
 void handle_u_type(uint32_t instruction, char* result, size_t* used, size_t buf_size){
     decode_registre(instruction, REGISTER_RD, REGISTER_COMMA_TRUE, result, used, buf_size);
@@ -708,12 +708,12 @@ void handle_j_type(uint32_t addr, uint32_t instruction, char* result, size_t* us
     imm |= (rs2 & RS2_LOWER_1) >> 9;
     imm |= func3 | rs1;
 
-    if((imm & 0x80000000) == 0x80000000){
+    if((instruction & 0x80000000) == 0x80000000){
         imm |= 0xFFFFF000;
     }
 
     imm += addr;
-    convert_imm_to_str(imm, "%#x", result, used, buf_size);
+    convert_imm_to_str(imm, "%x", result, used, buf_size);
 
     const char* sym = symbols_value_to_sym(symbols, addr);
     if(sym != NULL){
