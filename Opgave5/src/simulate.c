@@ -177,17 +177,17 @@ struct Stat simulate(struct memory *mem, int start_addr, FILE *log_file, struct 
 
             // Bimodal and gShare predictors
             for(int i=0;i<BIMODAL_SIZES;i++){
-                int idx = (pc >> 2) & (bimodal_sizes[i]-1);
-                int predicted = bimodal[i][idx]>=2?1:0;
+                int bimodal_index = (pc >> 2) & (bimodal_sizes[i]-1);
+                int predicted = bimodal[i][bimodal_index]>=2?1:0;
                 if(predicted != taken) bimodal_errors[i]++;
-                if(taken){ if(bimodal[i][idx]<3) bimodal[i][idx]++; } 
-                else { if(bimodal[i][idx]>0) bimodal[i][idx]--; }
+                if(taken){ if(bimodal[i][bimodal_index]<3) bimodal[i][bimodal_index]++; } 
+                else { if(bimodal[i][bimodal_index]>0) bimodal[i][bimodal_index]--; }
 
-                idx = ((pc >> 2) ^ ghr) & (bimodal_sizes[i]-1);
-                predicted = gshare[i][idx]>=2?1:0;
+                int gshare_index = ((pc >> 2) ^ ghr) & (bimodal_sizes[i]-1);
+                predicted = gshare[i][gshare_index]>=2?1:0;
                 if(predicted != taken) gshare_errors[i]++;
-                if(taken){ if(gshare[i][idx]<3) gshare[i][idx]++; } 
-                else { if(gshare[i][idx]>0) gshare[i][idx]--; }
+                if(taken){ if(gshare[i][gshare_index]<3) gshare[i][gshare_index]++; } 
+                else { if(gshare[i][gshare_index]>0) gshare[i][gshare_index]--; }
             }
             ghr = ((ghr << 1) | (taken?1:0)) & 0xFFFF;
         }
