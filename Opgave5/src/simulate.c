@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define BIMODAL_SIZES 4
+
 // --- Hjælpefunktioner ------------------------------------------------------
 
 int32_t sign_extend(int32_t value, int bits) {
@@ -87,7 +89,6 @@ struct Stat simulate(struct memory *mem, int start_addr, FILE *log_file, struct 
     // --- Branch prediction status ------------------------------------------
     long nt_errors = 0;
     long btfnt_errors = 0;
-    #define BIMODAL_SIZES 4
     const int bimodal_sizes[BIMODAL_SIZES] = {256, 1024, 4096, 16384};
     long bimodal_errors[BIMODAL_SIZES] = {0};
     long gshare_errors[BIMODAL_SIZES] = {0};
@@ -152,7 +153,7 @@ struct Stat simulate(struct memory *mem, int start_addr, FILE *log_file, struct 
             branch_count++;
         }
 
-        // --- BRANCH ----------------------------------------------------------
+        // --- RISC-V conditional branches -----------------------------------
         else if (opcode == 0x63) {
             int32_t imm = imm_B(inst);
             branch_target = pc + imm;
